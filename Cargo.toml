@@ -1,6 +1,6 @@
 [package]
 name = "elements"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["Geir Isene <g@isene.com>"]
 description = "Periodic table explorer with full Wikipedia article for every element (and the hypothesized ones). Part of the Fe2O3 suite, built on crust."

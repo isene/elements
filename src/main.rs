@@ -801,11 +801,17 @@ fn style_article(a: &str) -> String {
     for line in a.lines() {
         let t = line.trim();
         if t.len() > 4 && t.starts_with("==") && t.ends_with("==") {
+            let level = t.chars().take_while(|c| *c == '=').count();
             let title = t.trim_matches(|c: char| c == '=' || c == ' ');
             if TAIL_SECTIONS.contains(&title.to_lowercase().as_str()) {
                 break;
             }
-            out.push(format!("\x1b[1;38;2;247;140;60m{title}{RESET}"));
+            // Deeper sections: indented and progressively more muted.
+            out.push(match level {
+                2 => format!("\x1b[1;38;2;247;140;60m{title}{RESET}"),
+                3 => format!("  \x1b[1;38;2;250;200;130m{title}{RESET}"),
+                _ => format!("    \x1b[1;38;2;200;170;140m{title}{RESET}"),
+            });
         } else if let Some(p) = line
             .find("{\\displaystyle")
             .or_else(|| line.find("{\\textstyle"))
