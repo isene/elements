@@ -11,7 +11,8 @@ Interactive periodic table: all 118 confirmed elements plus the hypothesized 119
 ## Features
 
 - **Full table**: 118 confirmed elements, plus hypothesized 119–126 (period 8 and the predicted g-block row)
-- **Category colors**: alkali, alkaline earth, transition, post-transition, metalloid, nonmetal, noble gas, lanthanide, actinide, hypothetical
+- **Eight color modes** (keys 1-8 or Ctrl+←/→): category, phase at STP, cosmic origin (Big Bang, dying stars, supernovae, neutron-star mergers …), occurrence (primordial / from decay / synthetic), block, electronegativity, melting point, density — with a legend line under the table
+- **Wide-terminal layout**: on terminals ≥151 columns the property table sits beside the periodic table, leaving the pane below for the article
 - **Structured data**: mass, density, melt/boil (K and °C), molar heat, group/period/block, shells, electron configuration, electronegativity, electron affinity, ionization energy, appearance, discovery
 - **The complete Wikipedia article** for every element, scrollable in the detail pane
 - **Offline**: one-time fetch, cached at `~/.elements/elements.json` (~4 MB); the UI never touches the network
@@ -37,6 +38,7 @@ First start fetches the dataset from Wikipedia (about a minute), then everything
 | ← →, h/l | Previous / next element by atomic number (walks the whole table, row to row) |
 | ↑ ↓, k/j | Up / down within the column |
 | < > | Same as ← → |
+| 1-8, Ctrl+←/→ | Color mode (category, phase, cosmic origin, occurrence, block, electronegativity, melting point, density) |
 | J K | Scroll the article one line |
 | Space, PgUp/PgDn | Scroll the article one page |
 | g G | Top / bottom of the article |
