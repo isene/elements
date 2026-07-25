@@ -1,0 +1,19 @@
+[package]
+name = "elements"
+version = "0.1.0"
+edition = "2021"
+authors = ["Geir Isene <g@isene.com>"]
+description = "Periodic table explorer with full Wikipedia article for every element (and the hypothesized ones). Part of the Fe2O3 suite, built on crust."
+license = "Unlicense"
+repository = "https://github.com/isene/elements"
+
+[dependencies]
+crust = { version = "0.1", path = "../crust", package = "fe2o3-crust" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2", features = ["tls", "json"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

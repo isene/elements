@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect x="5" y="5" width="118" height="118" rx="14" fill="#1a1a1a" stroke="#f74c00" stroke-width="6"/>
+  <text x="20" y="38" font-family="monospace" font-size="22" fill="#f7a97c">26</text>
+  <text x="64" y="86" font-family="monospace" font-size="52" font-weight="bold" fill="#f74c00" text-anchor="middle">Fe</text>
+  <text x="64" y="110" font-family="monospace" font-size="15" fill="#cc9966" text-anchor="middle">iron</text>
+</svg>
