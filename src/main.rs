@@ -19,7 +19,7 @@ use std::io::Write;
 
 const GRID_X0: u16 = 3; // leftmost cell column
 const CELL_W: u16 = 4; // 3-char symbol + gap
-const DETAIL_Y: u16 = 16; // first row of the detail pane
+const DETAIL_Y: u16 = 17; // first row of the detail pane
 const MIN_COLS: u16 = GRID_X0 + 18 * CELL_W; // full 18-group table
 const SIDE_X: u16 = 78; // property block beside the grid starts here
 const SIDE_MIN: u16 = SIDE_X + 73; // terminal width needed for the side block
@@ -435,9 +435,9 @@ fn move_to(row: u16, col: u16) -> String {
 }
 
 fn grid_row(ypos: u32) -> u16 {
-    // Periods 1-8 directly below the header; f-block and the hypothesized
-    // g-block row sit below a one-row gap.
-    if ypos <= 8 { 2 + ypos as u16 } else { 3 + ypos as u16 }
+    // Blank row + label row below the header, then periods 1-8; the f-block
+    // and the hypothesized g-block row sit below a one-row gap.
+    if ypos <= 8 { 3 + ypos as u16 } else { 4 + ypos as u16 }
 }
 
 /// Colored legend for the active color mode (lives in the header row).
@@ -471,14 +471,18 @@ fn draw_header(app: &App, cols: u16) {
     let e = &app.els[app.sel];
     let (r, g, b) = cat_rgb(&e.category);
     let bg = "\x1b[48;5;236m";
-    let content = format!(
-        " {RUST}elements{RESET}  \x1b[1m{}{RESET} ({})  \x1b[2mZ={}\x1b[0m  \x1b[38;2;{r};{g};{b}m{}{RESET}   {}",
-        e.name,
-        e.symbol,
-        e.number,
-        e.category,
-        legend_string(app)
+    let info = format!(
+        " {RUST}elements{RESET}  \x1b[1m{}{RESET} ({})  \x1b[2mZ={}\x1b[0m  \x1b[38;2;{r};{g};{b}m{}{RESET}",
+        e.name, e.symbol, e.number, e.category
     );
+    let iw = crust::display_width(&info);
+    // Align the legend with the property table beside the grid when the
+    // wide layout is active (and the element info leaves room for it).
+    let content = if cols >= SIDE_MIN && iw < SIDE_X as usize - 1 {
+        format!("{info}{}{}", " ".repeat(SIDE_X as usize - 1 - iw), legend_string(app))
+    } else {
+        format!("{info}   {}", legend_string(app))
+    };
     // Re-arm the bar background after every SGR reset in the content.
     let line = content.replace(RESET, &format!("{RESET}{bg}"));
     let pad = (cols as usize).saturating_sub(crust::display_width(&content));
@@ -493,7 +497,7 @@ fn draw_grid_labels(cols: u16) {
     }
     let mut s = String::new();
     for g in 1..=18u16 {
-        s.push_str(&move_to(2, GRID_X0 + (g - 1) * CELL_W));
+        s.push_str(&move_to(3, GRID_X0 + (g - 1) * CELL_W));
         s.push_str(&format!("\x1b[2m{:^3}\x1b[0m", g));
     }
     for p in 1..=8u16 {
@@ -507,7 +511,7 @@ fn draw_grid_labels(cols: u16) {
 fn draw_grid(app: &App, cols: u16) {
     let mut s = String::new();
     if cols < MIN_COLS {
-        s.push_str(&move_to(3, 2));
+        s.push_str(&move_to(4, 2));
         s.push_str("\x1b[2mterminal too narrow for the table (need 75 cols) — / still works\x1b[0m");
     } else {
         let mm = if (5..=7).contains(&app.mode) {
@@ -600,11 +604,11 @@ fn draw_side(app: &App, cols: u16) {
     let blank = " ".repeat(avail);
     let mut s = String::new();
     for row in 0..13u16 {
-        s.push_str(&move_to(2 + row, SIDE_X));
+        s.push_str(&move_to(3 + row, SIDE_X));
         s.push_str(&blank);
     }
     for (i, l) in lines.iter().take(13).enumerate() {
-        s.push_str(&move_to(2 + i as u16, SIDE_X));
+        s.push_str(&move_to(3 + i as u16, SIDE_X));
         s.push_str(l);
     }
     print!("{s}");
