@@ -34,8 +34,9 @@ First start fetches the dataset from Wikipedia (about a minute), then everything
 
 | Key | Action |
 |-----|--------|
-| Arrows, h/j/k/l | Move around the table |
-| < > | Previous / next element by atomic number |
+| ← →, h/l | Previous / next element by atomic number (walks the whole table, row to row) |
+| ↑ ↓, k/j | Up / down within the column |
+| < > | Same as ← → |
 | J K | Scroll the article one line |
 | Space, PgUp/PgDn | Scroll the article one page |
 | g G | Top / bottom of the article |

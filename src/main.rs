@@ -119,28 +119,20 @@ fn main() {
         };
         match key.as_str() {
             "q" | "ESC" => break,
-            "LEFT" | "h" => {
-                let t = moved(&app, -1, 0);
-                select(&mut app, t, &mut detail, cols);
-            }
-            "RIGHT" | "l" => {
-                let t = moved(&app, 1, 0);
-                select(&mut app, t, &mut detail, cols);
-            }
-            "UP" | "k" => {
-                let t = moved(&app, 0, -1);
-                select(&mut app, t, &mut detail, cols);
-            }
-            "DOWN" | "j" => {
-                let t = moved(&app, 0, 1);
-                select(&mut app, t, &mut detail, cols);
-            }
-            "<" | "-" => {
+            "LEFT" | "h" | "<" | "-" => {
                 let t = app.sel.saturating_sub(1);
                 select(&mut app, t, &mut detail, cols);
             }
-            ">" | "+" => {
+            "RIGHT" | "l" | ">" | "+" => {
                 let t = (app.sel + 1).min(app.els.len() - 1);
+                select(&mut app, t, &mut detail, cols);
+            }
+            "UP" | "k" => {
+                let t = moved(&app, -1);
+                select(&mut app, t, &mut detail, cols);
+            }
+            "DOWN" | "j" => {
+                let t = moved(&app, 1);
                 select(&mut app, t, &mut detail, cols);
             }
             "J" => detail.linedown(),
@@ -233,14 +225,14 @@ fn find(els: &[Element], q: &str) -> Option<usize> {
         .or_else(|| els.iter().position(|e| e.name.to_lowercase().contains(&ql)))
 }
 
-/// Walk from the selected cell in a straight line until another element is
-/// hit (the table has gaps), or stay put at the edge.
-fn moved(app: &App, dx: i32, dy: i32) -> usize {
-    let (mut x, mut y) = (app.els[app.sel].xpos as i32, app.els[app.sel].ypos as i32);
+/// Walk vertically from the selected cell until another element is hit in
+/// the same column (the table has gaps), or stay put at the edge.
+fn moved(app: &App, dy: i32) -> usize {
+    let x = app.els[app.sel].xpos as i32;
+    let mut y = app.els[app.sel].ypos as i32;
     loop {
-        x += dx;
         y += dy;
-        if !(1..=18).contains(&x) || !(1..=app.max_y as i32).contains(&y) {
+        if !(1..=app.max_y as i32).contains(&y) {
             return app.sel;
         }
         if let Some(i) = app
@@ -337,7 +329,7 @@ fn draw_grid(app: &App, cols: u16) {
 }
 
 fn help_line() -> String {
-    "\x1b[2m←↓↑→ move · </> Z± · J/K scroll · / find · w wiki · u update · ? help · q quit\x1b[0m".to_string()
+    "\x1b[2m←→ Z± · ↑↓ column · J/K scroll · / find · w wiki · u update · ? help · q quit\x1b[0m".to_string()
 }
 
 fn draw_all(app: &App, detail: &mut Pane, status: &mut Pane, cols: u16, _rows: u16) {
@@ -360,8 +352,9 @@ fn set_detail(app: &App, detail: &mut Pane) {
 fn help_text() -> String {
     format!(
         "{RUST}elements — keys{RESET}\n\n\
-         \x20 ← ↑ ↓ → / h j k l   move around the table\n\
-         \x20 < >                 previous / next element by atomic number\n\
+         \x20 ← → / h l           previous / next element (walks the whole table)\n\
+         \x20 ↑ ↓ / k j           up / down within the column\n\
+         \x20 < >                 same as ← →\n\
          \x20 J K                 scroll the article one line\n\
          \x20 Space, PgDn/PgUp    scroll the article one page\n\
          \x20 g G                 top / bottom of the article\n\
@@ -385,100 +378,133 @@ fn kelvin(v: f64) -> String {
 fn detail_text(e: &Element) -> String {
     let (r, g, b) = cat_rgb(&e.category);
     let dim = "\x1b[2m";
+    let head = "\x1b[1;38;2;247;140;60m";
     let mut s = String::new();
 
     s.push_str(&format!(
-        "\x1b[1;38;2;{r};{g};{b}m{} ({}){RESET}  Z={}  \x1b[38;2;{r};{g};{b}m{}{RESET}",
+        "\x1b[1;38;2;{r};{g};{b}m{} ({}){RESET}  Z={}  \x1b[38;2;{r};{g};{b}m{}{RESET}\n\n",
         e.name, e.symbol, e.number, e.category
     ));
+
+    let mut phys: Vec<(String, String)> = Vec::new();
     if !e.phase.is_empty() {
-        s.push_str(&format!("  {dim}phase{RESET} {}", e.phase));
+        phys.push(("phase".into(), e.phase.clone()));
     }
-    s.push('\n');
-
-    let mut line = |props: Vec<String>| {
-        if !props.is_empty() {
-            s.push_str(&props.join("  ·  "));
-            s.push('\n');
-        }
-    };
-
-    let mut p = Vec::new();
-    if let Some(m) = e.atomic_mass {
-        p.push(format!("{dim}mass{RESET} {m} u"));
+    if let Some(v) = e.atomic_mass {
+        phys.push(("mass".into(), format!("{v} u")));
     }
-    if let Some(d) = e.density {
+    if let Some(v) = e.density {
         let unit = if e.phase == "Gas" { "g/L" } else { "g/cm³" };
-        p.push(format!("{dim}density{RESET} {d} {unit}"));
+        phys.push(("density".into(), format!("{v} {unit}")));
     }
-    if let Some(m) = e.melt {
-        p.push(format!("{dim}melt{RESET} {}", kelvin(m)));
+    if let Some(v) = e.melt {
+        phys.push(("melt".into(), kelvin(v)));
     }
-    if let Some(bp) = e.boil {
-        p.push(format!("{dim}boil{RESET} {}", kelvin(bp)));
+    if let Some(v) = e.boil {
+        phys.push(("boil".into(), kelvin(v)));
     }
-    if let Some(h) = e.molar_heat {
-        p.push(format!("{dim}molar heat{RESET} {h} J/(mol·K)"));
+    if let Some(v) = e.molar_heat {
+        phys.push(("molar heat".into(), format!("{v} J/(mol·K)")));
     }
-    line(p);
 
-    let mut p = Vec::new();
-    if let Some(gr) = e.group {
-        p.push(format!("{dim}group{RESET} {gr}"));
+    let mut atom: Vec<(String, String)> = Vec::new();
+    if let Some(v) = e.group {
+        atom.push(("group".into(), v.to_string()));
     }
-    if let Some(pe) = e.period {
-        p.push(format!("{dim}period{RESET} {pe}"));
+    if let Some(v) = e.period {
+        atom.push(("period".into(), v.to_string()));
     }
     if !e.block.is_empty() {
-        p.push(format!("{dim}block{RESET} {}", e.block));
+        atom.push(("block".into(), e.block.clone()));
     }
     if !e.shells.is_empty() {
         let shells: Vec<String> = e.shells.iter().map(|n| n.to_string()).collect();
-        p.push(format!("{dim}shells{RESET} {}", shells.join(",")));
+        atom.push(("shells".into(), shells.join(",")));
     }
     if !e.electron_configuration_semantic.is_empty() {
-        p.push(format!("{dim}config{RESET} {}", e.electron_configuration_semantic));
+        atom.push(("config".into(), e.electron_configuration_semantic.clone()));
     }
-    line(p);
+    if let Some(v) = e.electronegativity_pauling {
+        atom.push(("electroneg.".into(), v.to_string()));
+    }
+    if let Some(v) = e.electron_affinity {
+        atom.push(("e⁻ affinity".into(), format!("{v} kJ/mol")));
+    }
+    if !phys.is_empty() || !atom.is_empty() {
+        s.push_str(&prop_table("Physical", &phys, "Atomic", &atom));
+    }
 
-    let mut p = Vec::new();
-    if let Some(en) = e.electronegativity_pauling {
-        p.push(format!("{dim}electronegativity{RESET} {en}"));
-    }
-    if let Some(ea) = e.electron_affinity {
-        p.push(format!("{dim}e⁻ affinity{RESET} {ea} kJ/mol"));
-    }
-    if let Some(ie) = e.ionization_energies.first() {
-        p.push(format!("{dim}1st ionization{RESET} {ie} kJ/mol"));
-    }
-    line(p);
-
-    let mut p = Vec::new();
+    // Full-width rows for values too long for a table cell.
+    let mut wide = |label: &str, value: &str| {
+        s.push_str(&format!("{dim}{:<14}{RESET}{}\n", label, value));
+    };
     if let Some(a) = &e.appearance {
-        p.push(format!("{dim}appearance{RESET} {a}"));
+        wide("appearance", a);
     }
-    line(p);
-
-    let mut p = Vec::new();
+    if !e.ionization_energies.is_empty() {
+        let list: Vec<String> = e.ionization_energies.iter().map(|v| v.to_string()).collect();
+        wide("ionization", &format!("{} kJ/mol", list.join(", ")));
+    }
     if let Some(d) = &e.discovered_by {
-        p.push(format!("{dim}discovered by{RESET} {d}"));
+        wide("discovered by", d);
     }
     if let Some(n) = &e.named_by {
-        p.push(format!("{dim}named by{RESET} {n}"));
+        wide("named by", n);
     }
-    line(p);
+    if !e.source.is_empty() {
+        wide("wikipedia", &e.source);
+    }
 
-    let rule = format!("{dim}{}{RESET}\n", "─".repeat(72));
     if !e.summary.is_empty() {
-        s.push_str(&rule);
-        s.push_str(&e.summary);
-        s.push('\n');
+        s.push_str(&format!("\n{head}Summary{RESET}\n{}\n", e.summary));
     }
     if !e.article.is_empty() {
-        s.push_str(&rule);
+        s.push_str(&format!("\n{head}Wikipedia article{RESET}\n"));
         s.push_str(&style_article(&e.article));
     }
     s
+}
+
+/// Two side-by-side label/value columns in a box-drawn table (73 cells wide).
+fn prop_table(lt: &str, left: &[(String, String)], rt: &str, right: &[(String, String)]) -> String {
+    const CELL: usize = 35; // inner width of each cell
+    const LBL: usize = 12;
+    const VAL: usize = CELL - LBL - 2;
+    let d = "\x1b[2m";
+    let dash = |n: usize| "─".repeat(n);
+    let mut s = String::new();
+    s.push_str(&format!(
+        "{d}┌─{RESET} \x1b[1m{lt}{RESET} {d}{}┬─{RESET} \x1b[1m{rt}{RESET} {d}{}┐{RESET}\n",
+        dash(CELL - 3 - lt.chars().count()),
+        dash(CELL - 3 - rt.chars().count())
+    ));
+    for i in 0..left.len().max(right.len()) {
+        let cell = |c: Option<&(String, String)>| -> String {
+            match c {
+                Some((l, v)) => format!(" {d}{l:<LBL$}{RESET}{} ", fit(v, VAL)),
+                None => " ".repeat(CELL),
+            }
+        };
+        s.push_str(&format!(
+            "{d}│{RESET}{}{d}│{RESET}{}{d}│{RESET}\n",
+            cell(left.get(i)),
+            cell(right.get(i))
+        ));
+    }
+    s.push_str(&format!("{d}└{}┴{}┘{RESET}\n", dash(CELL), dash(CELL)));
+    s
+}
+
+/// Pad or ellipsize `v` to exactly `w` chars.
+fn fit(v: &str, w: usize) -> String {
+    let n = v.chars().count();
+    if n <= w {
+        format!("{v}{}", " ".repeat(w - n))
+    } else {
+        let mut t: String = v.chars().take(w - 1).collect();
+        t.push('…');
+        t
+    }
 }
 
 /// Bold the "== Section ==" headings of a Wikipedia plain-text extract.
