@@ -36,6 +36,10 @@ pub struct Element {
     pub appearance: Option<String>,
     pub discovered_by: Option<String>,
     pub named_by: Option<String>,
+    /// Year of first report, from Wikidata (P575). "1766", "5000 BC",
+    /// or "ancient" for the metals known since antiquity.
+    #[serde(default)]
+    pub discovered_year: String,
     #[serde(default)]
     pub summary: String,
     /// Wikipedia page URL.

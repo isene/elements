@@ -32,12 +32,22 @@ const MODE_NAMES: [&str; 8] = [
     "electronegativity", "melting point", "density",
 ];
 
+#[derive(PartialEq, Clone, Copy)]
+enum View {
+    Article,
+    Help,
+    Chat,
+}
+
 struct App {
     els: Vec<Element>,
     sel: usize,
     max_y: u32,
     mode: usize,
-    show_help: bool,
+    view: View,
+    /// Q&A turns with Claude about the selected element. Cleared when the
+    /// selection moves, so each element gets its own conversation.
+    chat: Vec<(String, String)>,
 }
 
 fn main() {
@@ -86,6 +96,20 @@ fn main() {
         }
     };
 
+    // Caches written before discovery years existed: one cheap Wikidata
+    // query fills them in, no article refetch. Runs once, then persists.
+    let mut els = els;
+    if els.iter().all(|e| e.discovered_year.is_empty()) {
+        if let Ok(years) = fetch::fetch_years() {
+            for e in els.iter_mut() {
+                if let Some(y) = years.get(&e.number) {
+                    e.discovered_year = y.clone();
+                }
+            }
+            let _ = data::save(&els);
+        }
+    }
+
     // Default to the suite's namesake.
     let mut sel = els.iter().position(|e| e.symbol == "Fe").unwrap_or(0);
     if let Some(q) = start {
@@ -112,7 +136,14 @@ fn main() {
     }
 
     let max_y = els.iter().map(|e| e.ypos).max().unwrap_or(10);
-    let mut app = App { els, sel, max_y, mode: 0, show_help: false };
+    let mut app = App {
+        els,
+        sel,
+        max_y,
+        mode: 0,
+        view: View::Article,
+        chat: Vec::new(),
+    };
 
     Crust::init();
     Crust::set_app_identity("Elements");
@@ -129,7 +160,15 @@ fn main() {
             None => continue,
         };
         match key.as_str() {
-            "q" | "ESC" => break,
+            "q" => break,
+            // ESC leaves help / chat first, quits only from the article.
+            "ESC" => {
+                if app.view == View::Article {
+                    break;
+                }
+                app.view = View::Article;
+                set_detail(&app, &mut detail, cols);
+            }
             "LEFT" | "h" | "<" | "-" => {
                 let t = app.sel.saturating_sub(1);
                 select(&mut app, t, &mut detail, cols);
@@ -214,7 +253,38 @@ fn main() {
                 status.say(&msg);
             }
             "?" => {
-                app.show_help = !app.show_help;
+                app.view = if app.view == View::Help { View::Article } else { View::Help };
+                set_detail(&app, &mut detail, cols);
+            }
+            "c" => {
+                let prompt = if app.chat.is_empty() {
+                    format!("Ask Claude about {}: ", app.els[app.sel].name)
+                } else {
+                    "Follow-up: ".to_string()
+                };
+                let q = status.ask_or_cancel(&prompt, "");
+                print!("\x1b[?25l");
+                std::io::stdout().flush().ok();
+                match q {
+                    Some(q) if !q.trim().is_empty() => {
+                        status.say("\x1b[38;2;120;200;255m asking claude…\x1b[0m");
+                        let answer = ask_claude(&app, q.trim());
+                        match answer {
+                            Ok(a) if !a.is_empty() => {
+                                app.chat.push((q.trim().to_string(), a));
+                                app.view = View::Chat;
+                                set_detail(&app, &mut detail, cols);
+                                status.say(&help_line());
+                            }
+                            Ok(_) => status.say("\x1b[38;2;255;120;120mclaude returned nothing\x1b[0m"),
+                            Err(e) => status.say(&format!("\x1b[38;2;255;120;120mclaude: {e}\x1b[0m")),
+                        }
+                    }
+                    _ => status.say(&help_line()),
+                }
+            }
+            "C" => {
+                app.view = if app.view == View::Chat { View::Article } else { View::Chat };
                 set_detail(&app, &mut detail, cols);
             }
             "RESIZE" => {
@@ -272,11 +342,14 @@ fn moved(app: &App, dy: i32) -> usize {
 }
 
 fn select(app: &mut App, new: usize, detail: &mut Pane, cols: u16) {
-    if new == app.sel && !app.show_help {
+    if new == app.sel && app.view == View::Article {
         return;
     }
+    if new != app.sel {
+        app.chat.clear(); // each element gets its own conversation
+    }
     app.sel = new;
-    app.show_help = false;
+    app.view = View::Article;
     draw_header(app, cols);
     draw_grid(app, cols);
     draw_side(app, cols);
@@ -542,7 +615,7 @@ fn draw_grid(app: &App, cols: u16) {
 }
 
 fn help_line() -> String {
-    "\x1b[2m←→ Z± · ↑↓ col · 1-8/^←→ color · J/K scroll · / find · ? help · q quit\x1b[0m"
+    "\x1b[2m←→ Z± · ↑↓ col · 1-8/^←→ color · J/K scroll · / find · c claude · ? help · q quit\x1b[0m"
         .to_string()
 }
 
@@ -560,10 +633,10 @@ fn draw_all(app: &App, detail: &mut Pane, status: &mut Pane, cols: u16, _rows: u
 
 fn set_detail(app: &App, detail: &mut Pane, cols: u16) {
     let side = cols >= SIDE_MIN;
-    let text = if app.show_help {
-        help_text()
-    } else {
-        detail_text(&app.els[app.sel], side)
+    let text = match app.view {
+        View::Help => help_text(),
+        View::Chat => chat_text(app),
+        View::Article => detail_text(&app.els[app.sel], side),
     };
     detail.set_text(&text);
     detail.ix = 0;
@@ -594,8 +667,8 @@ fn draw_side(app: &App, cols: u16) {
         let val = format!("{} kJ/mol", list.join(", "));
         lines.push(format!("{dim}{:<14}{RESET}{}", "ionization", fit(&val, avail - 14)));
     }
-    if let Some(d) = &e.discovered_by {
-        lines.push(format!("{dim}{:<14}{RESET}{}", "discovered by", fit(d, avail - 14)));
+    if let Some(d) = discovery_line(e) {
+        lines.push(format!("{dim}{:<14}{RESET}{}", "discovered", fit(&d, avail - 14)));
     }
     if let Some(n) = &e.named_by {
         lines.push(format!("{dim}{:<14}{RESET}{}", "named by", fit(n, avail - 14)));
@@ -628,10 +701,15 @@ fn help_text() -> String {
          \x20 Space, PgDn/PgUp    scroll the article one page\n\
          \x20 g G                 top / bottom of the article\n\
          \x20 /                   find an element (name, symbol, or atomic number)\n\
+         \x20 c                   ask Claude about this element (follow-ups keep context)\n\
+         \x20 C                   toggle the Claude conversation view\n\
          \x20 w                   open the element's Wikipedia page in the browser\n\
          \x20 u                   re-fetch all data from Wikipedia\n\
          \x20 ?                   toggle this help\n\
-         \x20 q, ESC              quit\n\n\
+         \x20 ESC                 back to the article (quits from the article view)\n\
+         \x20 q                   quit\n\n\
+         The Claude view runs `claude -p` with this element's data and article as\n\
+         context; the conversation resets when you move to another element.\n\n\
          The cosmic-origin mode shows the DOMINANT nucleosynthetic source per\n\
          element (simplified — most elements are a mix of sources).\n\n\
          Structured properties come from the Wikipedia-derived Periodic-Table-JSON\n\
@@ -639,6 +717,27 @@ fn help_text() -> String {
          is cached at ~/.elements/elements.json — the UI never touches the network.\n\
          The hypothesized elements 119–126 are included (g-block row at the bottom)."
     )
+}
+
+/// "Dirk Coster (1923)", "1923", or "Henry Cavendish" — whatever is known.
+fn discovery_line(e: &Element) -> Option<String> {
+    let who = e.discovered_by.as_deref().unwrap_or("").trim();
+    let year = e.discovered_year.trim();
+    // The dataset sometimes puts a bare date in discovered_by ("5000 BC").
+    let who_is_date = who.chars().next().is_some_and(|c| c.is_ascii_digit());
+    // "ancient" adds nothing when the discoverer field already carries a
+    // date ("unknown, before 3500 BC") — but it does inform "Middle East".
+    let year = if year == "ancient" && who.chars().any(|c| c.is_ascii_digit()) {
+        ""
+    } else {
+        year
+    };
+    match (who.is_empty() || who_is_date, year.is_empty()) {
+        (true, true) => (!who.is_empty()).then(|| who.to_string()),
+        (true, false) => Some(year.to_string()),
+        (false, true) => Some(who.to_string()),
+        (false, false) => Some(format!("{who} ({year})")),
+    }
 }
 
 fn kelvin(v: f64) -> String {
@@ -721,8 +820,8 @@ fn detail_text(e: &Element, side: bool) -> String {
             let list: Vec<String> = e.ionization_energies.iter().map(|v| v.to_string()).collect();
             wide("ionization", &format!("{} kJ/mol", list.join(", ")));
         }
-        if let Some(d) = &e.discovered_by {
-            wide("discovered by", d);
+        if let Some(d) = discovery_line(e) {
+            wide("discovered", &d);
         }
         if let Some(n) = &e.named_by {
             wide("named by", n);
@@ -830,10 +929,116 @@ fn style_article(a: &str) -> String {
                 out.push(format!("    \x1b[38;2;150;200;255m{inner}\x1b[0m"));
             }
         } else {
+            // One blank line between paragraphs: the extract runs them
+            // together, which reads as a wall of text in a wide pane.
+            if !line.trim().is_empty()
+                && matches!(out.last(), Some(l) if !l.trim().is_empty() && !l.contains('\x1b'))
+            {
+                out.push(String::new());
+            }
             out.push(line.to_string());
         }
     }
-    let mut s = out.join("\n");
-    s.push('\n');
+    // Collapse runs of blank lines to one so spacing stays uniform.
+    let mut s = String::with_capacity(a.len() + 2048);
+    let mut blank = false;
+    for l in out {
+        let empty = l.trim().is_empty();
+        if empty && blank {
+            continue;
+        }
+        blank = empty;
+        s.push_str(&l);
+        s.push('\n');
+    }
+    s
+}
+
+// ─────────────────────────── claude chat ─────────────────────────────
+
+/// Pipe `input` into `claude -p <prompt>` and return its answer.
+/// Same one-shot pattern the other Fe2O3 apps use (scribe's `:claude`).
+fn claude_run(prompt: &str, input: &str) -> Result<String, String> {
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("claude")
+        .args(["-p", prompt])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => "claude not on PATH".to_string(),
+            _ => format!("spawn: {e}"),
+        })?;
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(input.as_bytes())
+            .map_err(|e| format!("stdin write: {e}"))?;
+    }
+    drop(child.stdin.take());
+    let output = child.wait_with_output().map_err(|e| format!("wait: {e}"))?;
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        let snippet = err.lines().next().unwrap_or("(no message)");
+        return Err(snippet.chars().take(80).collect());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Ask Claude about the selected element, carrying the earlier turns of
+/// this element's conversation so follow-ups work.
+fn ask_claude(app: &App, question: &str) -> Result<String, String> {
+    let e = &app.els[app.sel];
+    let mut ctx = String::new();
+    ctx.push_str(&format!(
+        "Element: {} ({}), atomic number {}, category {}, phase {}.\n",
+        e.name, e.symbol, e.number, e.category, e.phase
+    ));
+    if let Some(m) = e.atomic_mass {
+        ctx.push_str(&format!("Atomic mass: {m} u\n"));
+    }
+    if !e.electron_configuration_semantic.is_empty() {
+        ctx.push_str(&format!(
+            "Electron configuration: {}\n",
+            e.electron_configuration_semantic
+        ));
+    }
+    if !e.article.is_empty() {
+        ctx.push_str("\nWikipedia article (may be truncated):\n");
+        let article: String = e.article.chars().take(12000).collect();
+        ctx.push_str(&article);
+    }
+    if !app.chat.is_empty() {
+        ctx.push_str("\n\nEarlier in this conversation:\n");
+        for (q, a) in &app.chat {
+            ctx.push_str(&format!("User: {q}\nYou: {a}\n\n"));
+        }
+    }
+    ctx.push_str(&format!("\n\nUser's question: {question}\n"));
+
+    let prompt = format!(
+        "You are a chemistry and physics tutor answering inside a terminal periodic-table app. \
+         The user is looking at {}. Answer their question from the reference material and your \
+         own knowledge. Plain text only — no markdown headings, bullets with '-' are fine. \
+         Keep it tight: a few short paragraphs at most. Do not use any tools; just answer.",
+        e.name
+    );
+    claude_run(&prompt, &ctx)
+}
+
+fn chat_text(app: &App) -> String {
+    let e = &app.els[app.sel];
+    let head = "\x1b[1;38;2;247;140;60m";
+    let mut s = format!("{head}Claude — {} ({}){RESET}\n\n", e.name, e.symbol);
+    if app.chat.is_empty() {
+        s.push_str("\x1b[2mPress c to ask a question about this element.\x1b[0m\n");
+        return s;
+    }
+    for (q, a) in &app.chat {
+        s.push_str(&format!("\x1b[1;38;2;120;200;255m? {q}{RESET}\n\n"));
+        s.push_str(a);
+        s.push_str("\n\n");
+    }
+    s.push_str("\x1b[2mc: ask a follow-up · ESC: back to the article\x1b[0m\n");
     s
 }

@@ -10,6 +10,9 @@ use std::sync::{Arc, Mutex};
 const STRUCTURED_URL: &str =
     "https://raw.githubusercontent.com/Bowserinator/Periodic-Table-JSON/master/PeriodicTableJSON.json";
 
+/// Wikidata: atomic number + time of discovery (P575) for every element.
+const YEARS_URL: &str = "https://query.wikidata.org/sparql?format=json&query=SELECT%20%3Fnum%20%3Fdate%20WHERE%20%7B%20%3Fe%20wdt%3AP31%20wd%3AQ11344%20%3B%20wdt%3AP1086%20%3Fnum%20%3B%20wdt%3AP575%20%3Fdate%20%7D%20ORDER%20BY%20%3Fnum";
+
 /// Hypothesized elements beyond the structured dataset (which ends at 119).
 /// Systematic IUPAC names; Wikipedia has an article or redirect for each.
 /// (number, symbol, name, group, period, block)
@@ -30,6 +33,58 @@ fn agent() -> ureq::Agent {
         .build()
 }
 
+/// Discovery years keyed by atomic number. Ancient metals that Wikidata
+/// leaves undated (Sn, Sb, Hg, Pb, Bi) fall back to "ancient".
+pub fn fetch_years() -> Result<std::collections::HashMap<u32, String>, String> {
+    let json: serde_json::Value = agent()
+        .get(YEARS_URL)
+        .set("Accept", "application/sparql-results+json")
+        .call()
+        .map_err(|e| format!("wikidata: {e}"))?
+        .into_json()
+        .map_err(|e| format!("wikidata parse: {e}"))?;
+    let mut out: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+    let rows = json["results"]["bindings"]
+        .as_array()
+        .ok_or("wikidata: no bindings")?;
+    for r in rows {
+        let num: u32 = match r["num"]["value"].as_str().and_then(|s| s.parse().ok()) {
+            Some(n) => n,
+            None => continue,
+        };
+        let date = match r["date"]["value"].as_str() {
+            Some(d) => d,
+            None => continue,
+        };
+        // ISO-8601; negative years are BC ("-5000-01-01T…").
+        let (year, bc) = match date.strip_prefix('-') {
+            Some(rest) => (rest.split('-').next().unwrap_or(""), true),
+            None => (date.split('-').next().unwrap_or(""), false),
+        };
+        let y: i64 = match year.parse() {
+            Ok(y) => y,
+            Err(_) => continue,
+        };
+        let label = if bc { format!("{y} BC") } else { y.to_string() };
+        // Several sources per element: keep the earliest report.
+        out.entry(num)
+            .and_modify(|cur| {
+                let key = |s: &str| -> i64 {
+                    let n: i64 = s.trim_end_matches(" BC").parse().unwrap_or(0);
+                    if s.ends_with(" BC") { -n } else { n }
+                };
+                if key(&label) < key(cur) {
+                    *cur = label.clone();
+                }
+            })
+            .or_insert(label);
+    }
+    for z in [50, 51, 80, 82, 83] {
+        out.entry(z).or_insert_with(|| "ancient".to_string());
+    }
+    Ok(out)
+}
+
 pub fn fetch_all() -> Result<Vec<Element>, String> {
     println!("Fetching structured element data …");
     let json: serde_json::Value = agent()
@@ -40,6 +95,18 @@ pub fn fetch_all() -> Result<Vec<Element>, String> {
         .map_err(|e| format!("structured data parse: {e}"))?;
     let list = json["elements"].as_array().ok_or("no elements array in dataset")?;
     let mut els: Vec<Element> = list.iter().map(parse_structured).collect();
+
+    println!("Fetching discovery years …");
+    match fetch_years() {
+        Ok(years) => {
+            for e in els.iter_mut() {
+                if let Some(y) = years.get(&e.number) {
+                    e.discovered_year = y.clone();
+                }
+            }
+        }
+        Err(e) => eprintln!("  (discovery years unavailable: {e})"),
+    }
 
     // Hypothesized elements: 120 continues period 8 next to 119; the g-block
     // ones get their own row below the actinides.
@@ -161,6 +228,7 @@ fn parse_structured(v: &serde_json::Value) -> Element {
         appearance: os("appearance"),
         discovered_by: os("discovered_by"),
         named_by: os("named_by"),
+        discovered_year: String::new(), // filled from Wikidata below
         summary: s("summary"),
         source: s("source"),
         article: String::new(),

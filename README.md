@@ -14,7 +14,8 @@ Interactive periodic table: all 118 confirmed elements plus the hypothesized 119
 - **Eight color modes** (keys 1-8 or Ctrl+←/→): category, phase at STP, cosmic origin (Big Bang, dying stars, supernovae, neutron-star mergers …), occurrence (primordial / from decay / synthetic), block, electronegativity, melting point, density — with the legend in the header bar
 - **Group and period labels** on the table; math markup and reference/link tail sections stripped from the articles
 - **Wide-terminal layout**: on terminals ≥151 columns the property table sits beside the periodic table, leaving the pane below for the article
-- **Structured data**: mass, density, melt/boil (K and °C), molar heat, group/period/block, shells, electron configuration, electronegativity, electron affinity, ionization energy, appearance, discovery
+- **Structured data**: mass, density, melt/boil (K and °C), molar heat, group/period/block, shells, electron configuration, electronegativity, electron affinity, ionization energy, appearance, discoverer and year of discovery (Wikidata)
+- **Ask Claude** (`c`): a conversation about the element you're looking at, with its data and article as context; follow-ups keep the thread
 - **The complete Wikipedia article** for every element, scrollable in the detail pane
 - **Offline**: one-time fetch, cached at `~/.elements/elements.json` (~4 MB); the UI never touches the network
 - **Scriptable**: `elements tungsten | less` prints plain text when piped
@@ -44,10 +45,13 @@ First start fetches the dataset from Wikipedia (about a minute), then everything
 | Space, PgUp/PgDn | Scroll the article one page |
 | g G | Top / bottom of the article |
 | / | Find an element (name, symbol, or atomic number) |
+| c | Ask Claude about this element (follow-ups keep context) |
+| C | Toggle the Claude conversation view |
 | w | Open the element's Wikipedia page in the browser |
 | u | Re-fetch all data from Wikipedia |
 | ? | Help |
-| q, ESC | Quit |
+| ESC | Back to the article (quits from the article view) |
+| q | Quit |
 
 ## CLI
 
