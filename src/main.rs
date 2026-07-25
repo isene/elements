@@ -19,7 +19,6 @@ use std::io::Write;
 
 const GRID_X0: u16 = 3; // leftmost cell column
 const CELL_W: u16 = 4; // 3-char symbol + gap
-const LEGEND_Y: u16 = 15; // color-mode legend row
 const DETAIL_Y: u16 = 16; // first row of the detail pane
 const MIN_COLS: u16 = GRID_X0 + 18 * CELL_W; // full 18-group table
 const SIDE_X: u16 = 78; // property block beside the grid starts here
@@ -119,7 +118,7 @@ fn main() {
     Crust::set_app_identity("Elements");
     let (mut cols, mut rows) = Crust::terminal_size();
     let mut detail = Pane::new(1, DETAIL_Y, cols, rows.saturating_sub(DETAIL_Y).max(1), 253, 0);
-    let mut status = Pane::new(1, rows, cols, 1, 244, 0);
+    let mut status = Pane::new(1, rows, cols, 1, 250, 236);
     status.scroll = false;
 
     draw_all(&app, &mut detail, &mut status, cols, rows);
@@ -149,21 +148,21 @@ fn main() {
             }
             "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" => {
                 app.mode = key.parse::<usize>().unwrap() - 1;
+                draw_header(&app, cols);
                 draw_grid(&app, cols);
-                draw_legend(&app);
             }
             "C-RIGHT" => {
                 app.mode = (app.mode + 1) % MODE_NAMES.len();
+                draw_header(&app, cols);
                 draw_grid(&app, cols);
-                draw_legend(&app);
             }
             "C-LEFT" => {
                 app.mode = (app.mode + MODE_NAMES.len() - 1) % MODE_NAMES.len();
+                draw_header(&app, cols);
                 draw_grid(&app, cols);
-                draw_legend(&app);
             }
-            "J" => detail.linedown(),
-            "K" => detail.lineup(),
+            "J" | "S-DOWN" => detail.linedown(),
+            "K" | "S-UP" => detail.lineup(),
             " " | "PgDOWN" => detail.pagedown(),
             "PgUP" => detail.pageup(),
             "g" | "HOME" => detail.top(),
@@ -278,7 +277,7 @@ fn select(app: &mut App, new: usize, detail: &mut Pane, cols: u16) {
     }
     app.sel = new;
     app.show_help = false;
-    draw_header(app);
+    draw_header(app, cols);
     draw_grid(app, cols);
     draw_side(app, cols);
     set_detail(app, detail, cols);
@@ -441,17 +440,67 @@ fn grid_row(ypos: u32) -> u16 {
     if ypos <= 8 { 2 + ypos as u16 } else { 3 + ypos as u16 }
 }
 
-fn draw_header(app: &App) {
+/// Colored legend for the active color mode (lives in the header row).
+fn legend_string(app: &App) -> String {
+    let mut s = format!("\x1b[1m{} {}\x1b[0m ", app.mode + 1, MODE_NAMES[app.mode]);
+    let items: &[(&str, (u8, u8, u8))] = match app.mode {
+        0 => &CAT_LEGEND,
+        1 => &PHASE_LEGEND,
+        2 => &ORIGIN_LEGEND,
+        3 => &OCC_LEGEND,
+        4 => &BLOCK_LEGEND,
+        _ => &[],
+    };
+    if items.is_empty() {
+        // Gradient modes: a color ramp.
+        s.push_str("\x1b[2mlow \x1b[0m");
+        for i in 0..16 {
+            let (r, g, b) = gradient(i as f64 / 15.0);
+            s.push_str(&format!("\x1b[38;2;{r};{g};{b}m█\x1b[0m"));
+        }
+        s.push_str("\x1b[2m high\x1b[0m");
+    } else {
+        for (lbl, (r, g, b)) in items {
+            s.push_str(&format!("\x1b[38;2;{r};{g};{b}m{lbl}\x1b[0m "));
+        }
+    }
+    s
+}
+
+fn draw_header(app: &App, cols: u16) {
     let e = &app.els[app.sel];
     let (r, g, b) = cat_rgb(&e.category);
-    print!(
-        "{}\x1b[2K {RUST}elements{RESET}  \x1b[1m{}{RESET} ({})  \x1b[2mZ={}\x1b[0m  \x1b[38;2;{r};{g};{b}m{}{RESET}",
-        move_to(1, 1),
+    let bg = "\x1b[48;5;236m";
+    let content = format!(
+        " {RUST}elements{RESET}  \x1b[1m{}{RESET} ({})  \x1b[2mZ={}\x1b[0m  \x1b[38;2;{r};{g};{b}m{}{RESET}   {}",
         e.name,
         e.symbol,
         e.number,
-        e.category
+        e.category,
+        legend_string(app)
     );
+    // Re-arm the bar background after every SGR reset in the content.
+    let line = content.replace(RESET, &format!("{RESET}{bg}"));
+    let pad = (cols as usize).saturating_sub(crust::display_width(&content));
+    print!("{}{bg}{line}{}{RESET}", move_to(1, 1), " ".repeat(pad));
+    std::io::stdout().flush().ok();
+}
+
+/// Group numbers above the columns, period numbers left of the rows.
+fn draw_grid_labels(cols: u16) {
+    if cols < MIN_COLS {
+        return;
+    }
+    let mut s = String::new();
+    for g in 1..=18u16 {
+        s.push_str(&move_to(2, GRID_X0 + (g - 1) * CELL_W));
+        s.push_str(&format!("\x1b[2m{:^3}\x1b[0m", g));
+    }
+    for p in 1..=8u16 {
+        s.push_str(&move_to(grid_row(p as u32), 1));
+        s.push_str(&format!("\x1b[2m{p}\x1b[0m"));
+    }
+    print!("{s}");
     std::io::stdout().flush().ok();
 }
 
@@ -488,34 +537,6 @@ fn draw_grid(app: &App, cols: u16) {
     std::io::stdout().flush().ok();
 }
 
-fn draw_legend(app: &App) {
-    let mut s = format!("{}\x1b[2K", move_to(LEGEND_Y, GRID_X0));
-    s.push_str(&format!("\x1b[1m{} {}\x1b[0m  ", app.mode + 1, MODE_NAMES[app.mode]));
-    let items: &[(&str, (u8, u8, u8))] = match app.mode {
-        0 => &CAT_LEGEND,
-        1 => &PHASE_LEGEND,
-        2 => &ORIGIN_LEGEND,
-        3 => &OCC_LEGEND,
-        4 => &BLOCK_LEGEND,
-        _ => &[],
-    };
-    if items.is_empty() {
-        // Gradient modes: a color ramp.
-        s.push_str("\x1b[2mlow \x1b[0m");
-        for i in 0..24 {
-            let (r, g, b) = gradient(i as f64 / 23.0);
-            s.push_str(&format!("\x1b[38;2;{r};{g};{b}m█\x1b[0m"));
-        }
-        s.push_str("\x1b[2m high\x1b[0m");
-    } else {
-        for (lbl, (r, g, b)) in items {
-            s.push_str(&format!("\x1b[38;2;{r};{g};{b}m{lbl}\x1b[0m "));
-        }
-    }
-    print!("{s}");
-    std::io::stdout().flush().ok();
-}
-
 fn help_line() -> String {
     "\x1b[2m←→ Z± · ↑↓ col · 1-8/^←→ color · J/K scroll · / find · ? help · q quit\x1b[0m"
         .to_string()
@@ -523,9 +544,9 @@ fn help_line() -> String {
 
 fn draw_all(app: &App, detail: &mut Pane, status: &mut Pane, cols: u16, _rows: u16) {
     Crust::clear_screen();
-    draw_header(app);
+    draw_header(app, cols);
     draw_grid(app, cols);
-    draw_legend(app);
+    draw_grid_labels(cols);
     draw_side(app, cols);
     status.invalidate();
     status.say(&help_line());
@@ -599,7 +620,7 @@ fn help_text() -> String {
          \x20 1-8, Ctrl+← →       color mode: 1 category · 2 phase · 3 cosmic origin ·\n\
          \x20                     4 occurrence · 5 block · 6 electronegativity ·\n\
          \x20                     7 melting point · 8 density (log scale)\n\
-         \x20 J K                 scroll the article one line\n\
+         \x20 J K / Shift-↓ ↑     scroll the article one line\n\
          \x20 Space, PgDn/PgUp    scroll the article one page\n\
          \x20 g G                 top / bottom of the article\n\
          \x20 /                   find an element (name, symbol, or atomic number)\n\
@@ -760,18 +781,49 @@ fn fit(v: &str, w: usize) -> String {
     }
 }
 
-/// Bold the "== Section ==" headings of a Wikipedia plain-text extract.
+/// Reference/link sections at the article tail — not worth screen space.
+const TAIL_SECTIONS: [&str; 9] = [
+    "see also", "references", "notes", "citations", "sources",
+    "further reading", "external links", "bibliography", "explanatory notes",
+];
+
+/// Clean up a Wikipedia plain-text extract for display:
+/// - bold the "== Section ==" headings,
+/// - stop at the reference/link tail sections,
+/// - collapse <math> dumps (a stack of indented glyph lines followed by a
+///   "{\displaystyle …}" annotation) into the readable LaTeX body.
 fn style_article(a: &str) -> String {
-    let mut out = String::with_capacity(a.len() + 512);
+    let mut out: Vec<String> = Vec::new();
     for line in a.lines() {
         let t = line.trim();
         if t.len() > 4 && t.starts_with("==") && t.ends_with("==") {
             let title = t.trim_matches(|c: char| c == '=' || c == ' ');
-            out.push_str(&format!("\x1b[1;38;2;247;140;60m{title}{RESET}\n"));
+            if TAIL_SECTIONS.contains(&title.to_lowercase().as_str()) {
+                break;
+            }
+            out.push(format!("\x1b[1;38;2;247;140;60m{title}{RESET}"));
+        } else if let Some(p) = line
+            .find("{\\displaystyle")
+            .or_else(|| line.find("{\\textstyle"))
+        {
+            // Drop the glyph stack that precedes the annotation.
+            while matches!(out.last(), Some(l) if l.is_empty() || l.starts_with(' ')) {
+                out.pop();
+            }
+            let rest = &line[p..];
+            let inner = rest
+                .find(' ')
+                .map(|i| rest[i + 1..].trim_end())
+                .unwrap_or("");
+            let inner = inner.strip_suffix('}').unwrap_or(inner).trim();
+            if !inner.is_empty() {
+                out.push(format!("    \x1b[38;2;150;200;255m{inner}\x1b[0m"));
+            }
         } else {
-            out.push_str(line);
-            out.push('\n');
+            out.push(line.to_string());
         }
     }
-    out
+    let mut s = out.join("\n");
+    s.push('\n');
+    s
 }

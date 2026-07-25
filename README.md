@@ -11,7 +11,8 @@ Interactive periodic table: all 118 confirmed elements plus the hypothesized 119
 ## Features
 
 - **Full table**: 118 confirmed elements, plus hypothesized 119–126 (period 8 and the predicted g-block row)
-- **Eight color modes** (keys 1-8 or Ctrl+←/→): category, phase at STP, cosmic origin (Big Bang, dying stars, supernovae, neutron-star mergers …), occurrence (primordial / from decay / synthetic), block, electronegativity, melting point, density — with a legend line under the table
+- **Eight color modes** (keys 1-8 or Ctrl+←/→): category, phase at STP, cosmic origin (Big Bang, dying stars, supernovae, neutron-star mergers …), occurrence (primordial / from decay / synthetic), block, electronegativity, melting point, density — with the legend in the header bar
+- **Group and period labels** on the table; math markup and reference/link tail sections stripped from the articles
 - **Wide-terminal layout**: on terminals ≥151 columns the property table sits beside the periodic table, leaving the pane below for the article
 - **Structured data**: mass, density, melt/boil (K and °C), molar heat, group/period/block, shells, electron configuration, electronegativity, electron affinity, ionization energy, appearance, discovery
 - **The complete Wikipedia article** for every element, scrollable in the detail pane
@@ -39,7 +40,7 @@ First start fetches the dataset from Wikipedia (about a minute), then everything
 | ↑ ↓, k/j | Up / down within the column |
 | < > | Same as ← → |
 | 1-8, Ctrl+←/→ | Color mode (category, phase, cosmic origin, occurrence, block, electronegativity, melting point, density) |
-| J K | Scroll the article one line |
+| J K, Shift+↓/↑ | Scroll the article one line |
 | Space, PgUp/PgDn | Scroll the article one page |
 | g G | Top / bottom of the article |
 | / | Find an element (name, symbol, or atomic number) |
