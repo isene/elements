@@ -1,6 +1,67 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect x="5" y="5" width="118" height="118" rx="14" fill="#1a1a1a" stroke="#f74c00" stroke-width="6"/>
-  <text x="20" y="38" font-family="monospace" font-size="22" fill="#f7a97c">26</text>
-  <text x="64" y="86" font-family="monospace" font-size="52" font-weight="bold" fill="#f74c00" text-anchor="middle">Fe</text>
-  <text x="64" y="110" font-family="monospace" font-size="15" fill="#cc9966" text-anchor="middle">iron</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#0a0a14"/>
+    </linearGradient>
+    <linearGradient id="rust" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f74c00"/>
+      <stop offset="100%" style="stop-color:#b7410e"/>
+    </linearGradient>
+  </defs>
+  <style>
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+    @keyframes glow  { 0%,100% { opacity: 0.85; } 50% { opacity: 0.35; } }
+    .sel { animation: pulse 2.6s ease-in-out infinite; }
+    .c1  { animation: glow 3.2s ease-in-out infinite; }
+    .c2  { animation: glow 3.2s ease-in-out 0.8s infinite; }
+    .c3  { animation: glow 3.2s ease-in-out 1.6s infinite; }
+  </style>
+  <circle cx="128" cy="128" r="120" fill="url(#bg)" stroke="url(#rust)" stroke-width="3"/>
+
+  <!-- Miniature periodic table: three rows of cells, one highlighted (Fe) -->
+  <g>
+    <!-- row 1 -->
+    <rect x="46"  y="52" width="12" height="12" rx="2" fill="#6496ff" class="c1"/>
+    <rect x="184" y="52" width="12" height="12" rx="2" fill="#be78ff" class="c2"/>
+    <!-- row 2 -->
+    <rect x="46"  y="68" width="12" height="12" rx="2" fill="#ff6347"/>
+    <rect x="62"  y="68" width="12" height="12" rx="2" fill="#ffa500" class="c3"/>
+    <rect x="120" y="68" width="12" height="12" rx="2" fill="#00ced1"/>
+    <rect x="136" y="68" width="12" height="12" rx="2" fill="#6496ff"/>
+    <rect x="152" y="68" width="12" height="12" rx="2" fill="#6496ff" class="c1"/>
+    <rect x="168" y="68" width="12" height="12" rx="2" fill="#6496ff"/>
+    <rect x="184" y="68" width="12" height="12" rx="2" fill="#be78ff"/>
+    <!-- row 3 (transition metals) -->
+    <rect x="46"  y="84" width="12" height="12" rx="2" fill="#ff6347"/>
+    <rect x="62"  y="84" width="12" height="12" rx="2" fill="#ffa500"/>
+    <rect x="78"  y="84" width="12" height="12" rx="2" fill="#ffd000" class="c2"/>
+    <rect x="94"  y="84" width="12" height="12" rx="2" fill="#ffd000"/>
+    <rect x="110" y="84" width="12" height="12" rx="2" fill="#ffd000"/>
+    <rect x="126" y="84" width="12" height="12" rx="2" fill="#ffd000"/>
+    <rect x="142" y="84" width="12" height="12" rx="2" fill="#78dc78" class="c3"/>
+    <rect x="158" y="84" width="12" height="12" rx="2" fill="#00ced1"/>
+    <rect x="174" y="84" width="12" height="12" rx="2" fill="#6496ff"/>
+    <rect x="190" y="84" width="12" height="12" rx="2" fill="#be78ff"/>
+    <!-- f-block strip -->
+    <g opacity="0.75">
+      <rect x="78"  y="102" width="12" height="8" rx="2" fill="#ff79c6"/>
+      <rect x="94"  y="102" width="12" height="8" rx="2" fill="#ff79c6"/>
+      <rect x="110" y="102" width="12" height="8" rx="2" fill="#ff79c6"/>
+      <rect x="126" y="102" width="12" height="8" rx="2" fill="#ff79c6"/>
+      <rect x="142" y="102" width="12" height="8" rx="2" fill="#f05a96"/>
+      <rect x="158" y="102" width="12" height="8" rx="2" fill="#f05a96"/>
+      <rect x="174" y="102" width="12" height="8" rx="2" fill="#f05a96"/>
+    </g>
+  </g>
+
+  <!-- Selected element card: Fe -->
+  <g class="sel">
+    <rect x="96" y="120" width="64" height="64" rx="8" fill="#141422" stroke="#f74c00" stroke-width="3"/>
+    <text x="104" y="139" font-family="monospace" font-size="13" fill="#f7a97c">26</text>
+    <text x="128" y="170" font-family="monospace" font-size="32" font-weight="bold" fill="url(#rust)" text-anchor="middle">Fe</text>
+  </g>
+
+  <text x="128" y="212" font-family="monospace" font-size="22" font-weight="bold" fill="url(#rust)" text-anchor="middle" letter-spacing="2">elements</text>
+  <text x="128" y="228" font-family="monospace" font-size="8" fill="#888" text-anchor="middle">periodic table explorer</text>
 </svg>
