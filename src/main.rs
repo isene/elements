@@ -23,6 +23,7 @@ const DETAIL_Y: u16 = 17; // first row of the detail pane
 const MIN_COLS: u16 = GRID_X0 + 18 * CELL_W; // full 18-group table
 const SIDE_X: u16 = 78; // property block beside the grid starts here
 const SIDE_MIN: u16 = SIDE_X + 73; // terminal width needed for the side block
+const SIDE_ROWS: u16 = DETAIL_Y - 3; // rows 3..DETAIL_Y-1 are the side block's
 
 const RUST: &str = "\x1b[1;38;2;247;76;0m";
 const RESET: &str = "\x1b[0m";
@@ -659,28 +660,67 @@ fn draw_side(app: &App, cols: u16) {
         }
     }
     let dim = "\x1b[2m";
+    // Long values (notably the full ionization series) continue on further
+    // lines indented to the value column instead of being cut off.
+    let w = avail.saturating_sub(14).max(8);
+    let mut items: Vec<(&str, String)> = Vec::new();
     if let Some(a) = &e.appearance {
-        lines.push(format!("{dim}{:<14}{RESET}{}", "appearance", fit(a, avail - 14)));
+        items.push(("appearance", a.clone()));
     }
     if !e.ionization_energies.is_empty() {
         let list: Vec<String> = e.ionization_energies.iter().map(|v| v.to_string()).collect();
-        let val = format!("{} kJ/mol", list.join(", "));
-        lines.push(format!("{dim}{:<14}{RESET}{}", "ionization", fit(&val, avail - 14)));
+        items.push(("ionization", format!("{} kJ/mol", list.join(", "))));
     }
     if let Some(d) = discovery_line(e) {
-        lines.push(format!("{dim}{:<14}{RESET}{}", "discovered", fit(&d, avail - 14)));
+        items.push(("discovered", d));
     }
     if let Some(n) = &e.named_by {
-        lines.push(format!("{dim}{:<14}{RESET}{}", "named by", fit(n, avail - 14)));
+        items.push(("named by", n.clone()));
+    }
+    let mut blocks: Vec<Vec<String>> = items
+        .iter()
+        .map(|(_, v)| wrap_words(v, w))
+        .collect();
+    // Over budget: shave lines off the tallest block (ionization, in
+    // practice) rather than losing whole rows off the bottom.
+    let budget = SIDE_ROWS as usize;
+    let mut total = lines.len() + blocks.iter().map(|b| b.len()).sum::<usize>();
+    while total > budget {
+        let tallest = blocks
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, b)| b.len())
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        if blocks[tallest].len() <= 1 {
+            break;
+        }
+        blocks[tallest].pop();
+        if let Some(last) = blocks[tallest].last_mut() {
+            while last.chars().count() >= w {
+                last.pop();
+            }
+            last.push('…');
+        }
+        total -= 1;
+    }
+    for ((label, _), block) in items.iter().zip(blocks) {
+        for (i, chunk) in block.into_iter().enumerate() {
+            if i == 0 {
+                lines.push(format!("{dim}{label:<14}{RESET}{chunk}"));
+            } else {
+                lines.push(format!("{:14}{chunk}", ""));
+            }
+        }
     }
 
     let blank = " ".repeat(avail);
     let mut s = String::new();
-    for row in 0..13u16 {
+    for row in 0..SIDE_ROWS {
         s.push_str(&move_to(3 + row, SIDE_X));
         s.push_str(&blank);
     }
-    for (i, l) in lines.iter().take(13).enumerate() {
+    for (i, l) in lines.iter().take(SIDE_ROWS as usize).enumerate() {
         s.push_str(&move_to(3 + i as u16, SIDE_X));
         s.push_str(l);
     }
@@ -870,6 +910,29 @@ fn prop_table(lt: &str, left: &[(String, String)], rt: &str, right: &[(String, S
     }
     s.push_str(&format!("{d}└{}┴{}┘{RESET}\n", dash(CELL), dash(CELL)));
     s
+}
+
+/// Greedy word wrap at `w` columns (no ANSI in the input).
+fn wrap_words(s: &str, w: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut line = String::new();
+    for word in s.split_whitespace() {
+        let need = if line.is_empty() { word.chars().count() } else { line.chars().count() + 1 + word.chars().count() };
+        if need > w && !line.is_empty() {
+            out.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    if !line.is_empty() {
+        out.push(line);
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
 }
 
 /// Pad or ellipsize `v` to exactly `w` chars.
