@@ -28,16 +28,21 @@ const SIDE_ROWS: u16 = DETAIL_Y - 3; // rows 3..DETAIL_Y-1 are the side block's
 const RUST: &str = "\x1b[1;38;2;247;76;0m";
 const RESET: &str = "\x1b[0m";
 
-const MODE_NAMES: [&str; 8] = [
+const MODE_NAMES: [&str; 12] = [
     "category", "phase", "cosmic origin", "occurrence", "block",
     "electronegativity", "melting point", "density",
+    "phase at T", "1st ionization", "life", "stability",
 ];
+/// Modes reachable by digit; the rest live in the `m` menu and the cycle.
+const DIGIT_MODES: usize = 9;
+const MODE_TEMP: usize = 8;
 
 #[derive(PartialEq, Clone, Copy)]
 enum View {
     Article,
     Help,
     Chat,
+    Modes,
 }
 
 struct App {
@@ -45,7 +50,11 @@ struct App {
     sel: usize,
     max_y: u32,
     mode: usize,
+    /// Temperature for the "phase at T" mode, in kelvin.
+    temp_k: f64,
     view: View,
+    /// Cursor in the mode menu.
+    menu_ix: usize,
     /// Q&A turns with Claude about the selected element. Cleared when the
     /// selection moves, so each element gets its own conversation.
     chat: Vec<(String, String)>,
@@ -142,7 +151,9 @@ fn main() {
         sel,
         max_y,
         mode: 0,
+        temp_k: 293.15, // room temperature
         view: View::Article,
+        menu_ix: 0,
         chat: Vec::new(),
     };
 
@@ -170,11 +181,29 @@ fn main() {
                 app.view = View::Article;
                 set_detail(&app, &mut detail, cols);
             }
-            "LEFT" | "h" | "<" | "-" => {
+            // In the mode menu the movement keys pick a mode instead.
+            "UP" | "k" | "DOWN" | "j" if app.view == View::Modes => {
+                let up = key == "UP" || key == "k";
+                let n = MODE_NAMES.len();
+                app.menu_ix = if up {
+                    (app.menu_ix + n - 1) % n
+                } else {
+                    (app.menu_ix + 1) % n
+                };
+                set_detail(&app, &mut detail, cols);
+            }
+            "ENTER" if app.view == View::Modes => {
+                app.mode = app.menu_ix;
+                app.view = View::Article;
+                draw_header(&app, cols);
+                draw_grid(&app, cols);
+                set_detail(&app, &mut detail, cols);
+            }
+            "LEFT" | "h" | "<" => {
                 let t = app.sel.saturating_sub(1);
                 select(&mut app, t, &mut detail, cols);
             }
-            "RIGHT" | "l" | ">" | "+" => {
+            "RIGHT" | "l" | ">" => {
                 let t = (app.sel + 1).min(app.els.len() - 1);
                 select(&mut app, t, &mut detail, cols);
             }
@@ -186,10 +215,38 @@ fn main() {
                 let t = moved(&app, 1);
                 select(&mut app, t, &mut detail, cols);
             }
-            "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" => {
-                app.mode = key.parse::<usize>().unwrap() - 1;
-                draw_header(&app, cols);
-                draw_grid(&app, cols);
+            // Temperature for the "phase at T" mode. Coarse with the
+            // shifted pair, and only meaningful while that mode is up.
+            "+" | "-" | "*" | "_" => {
+                if app.mode == MODE_TEMP {
+                    let step = if key == "*" || key == "_" { 250.0 } else { 25.0 };
+                    let up = key == "+" || key == "*";
+                    app.temp_k = (app.temp_k + if up { step } else { -step }).clamp(0.0, 7000.0);
+                    draw_header(&app, cols);
+                    draw_grid(&app, cols);
+                } else {
+                    let t = if key == "+" {
+                        (app.sel + 1).min(app.els.len() - 1)
+                    } else {
+                        app.sel.saturating_sub(1)
+                    };
+                    select(&mut app, t, &mut detail, cols);
+                }
+            }
+            "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
+                let n = key.parse::<usize>().unwrap() - 1;
+                if n < DIGIT_MODES {
+                    app.mode = n;
+                    app.view = View::Article;
+                    draw_header(&app, cols);
+                    draw_grid(&app, cols);
+                    set_detail(&app, &mut detail, cols);
+                }
+            }
+            "m" => {
+                app.view = if app.view == View::Modes { View::Article } else { View::Modes };
+                app.menu_ix = app.mode;
+                set_detail(&app, &mut detail, cols);
             }
             "C-RIGHT" => {
                 app.mode = (app.mode + 1) % MODE_NAMES.len();
@@ -453,12 +510,62 @@ const BLOCK_LEGEND: [(&str, (u8, u8, u8)); 5] = [
     ("g", (150, 150, 150)),
 ];
 
+/// Role in human biology. Bulk elements are ~99% of body mass; the
+/// macro-minerals and trace metals are established as essential; the
+/// last tier is the genuinely debated set.
+const LIFE_LEGEND: [(&str, (u8, u8, u8)); 5] = [
+    ("bulk", (102, 221, 136)),
+    ("mineral", (120, 200, 255)),
+    ("trace", (255, 204, 68)),
+    ("debated", (170, 140, 200)),
+    ("none", (110, 110, 110)),
+];
+
+fn life_idx(z: u32) -> usize {
+    match z {
+        1 | 6 | 7 | 8 | 15 | 16 => 0,                       // H C N O P S
+        11 | 12 | 17 | 19 | 20 => 1,                        // Na Mg Cl K Ca
+        25..=27 | 29 | 30 | 34 | 42 | 53 => 2,              // Mn Fe Co Cu Zn Se Mo I
+        5 | 9 | 14 | 23 | 24 | 28 | 33 => 3,                // B F Si V Cr Ni As
+        _ => 4,
+    }
+}
+
+const STABILITY_LEGEND: [(&str, (u8, u8, u8)); 3] = [
+    ("stable isotope", (102, 221, 136)),
+    ("no stable isotope", (255, 119, 102)),
+    ("hypothetical", (150, 150, 150)),
+];
+
+fn stability_idx(z: u32) -> usize {
+    match z {
+        119.. => 2,
+        // Tc and Pm are the two holes in the stable table; everything
+        // from bismuth up is radioactive (Bi-209 since 2003).
+        43 | 61 | 83.. => 1,
+        _ => 0,
+    }
+}
+
 fn mode_value(e: &Element, mode: usize) -> Option<f64> {
     match mode {
         5 => e.electronegativity_pauling,
         6 => e.melt,
         7 => e.density.map(|d| d.max(1e-6).log10()),
+        9 => e.ionization_energies.first().copied(),
         _ => None,
+    }
+}
+
+/// Solid / liquid / gas at `t` kelvin, as an index into PHASE_LEGEND.
+fn phase_at(e: &Element, t: f64) -> usize {
+    match (e.melt, e.boil) {
+        (Some(m), Some(b)) => {
+            if t < m { 0 } else if t < b { 1 } else { 2 }
+        }
+        // Melting point only: solid below it, otherwise unknown.
+        (Some(m), None) => if t < m { 0 } else { 3 },
+        _ => 3,
     }
 }
 
@@ -479,8 +586,11 @@ fn gradient(t: f64) -> (u8, u8, u8) {
     }
 }
 
-fn cell_rgb(e: &Element, mode: usize, mm: Option<(f64, f64)>) -> (u8, u8, u8) {
+fn cell_rgb(e: &Element, mode: usize, mm: Option<(f64, f64)>, temp_k: f64) -> (u8, u8, u8) {
     match mode {
+        MODE_TEMP => PHASE_LEGEND[phase_at(e, temp_k)].1,
+        10 => LIFE_LEGEND[life_idx(e.number)].1,
+        11 => STABILITY_LEGEND[stability_idx(e.number)].1,
         1 => match e.phase.as_str() {
             "Solid" => PHASE_LEGEND[0].1,
             "Liquid" => PHASE_LEGEND[1].1,
@@ -494,7 +604,7 @@ fn cell_rgb(e: &Element, mode: usize, mm: Option<(f64, f64)>) -> (u8, u8, u8) {
             .find(|(b, _)| *b == e.block)
             .map(|(_, c)| *c)
             .unwrap_or((150, 150, 150)),
-        5..=7 => match (mode_value(e, mode), mm) {
+        5..=7 | 9 => match (mode_value(e, mode), mm) {
             (Some(v), Some((lo, hi))) if hi > lo => gradient((v - lo) / (hi - lo)),
             _ => (110, 110, 110),
         },
@@ -516,13 +626,25 @@ fn grid_row(ypos: u32) -> u16 {
 
 /// Colored legend for the active color mode (lives in the header row).
 fn legend_string(app: &App) -> String {
-    let mut s = format!("\x1b[1m{} {}\x1b[0m ", app.mode + 1, MODE_NAMES[app.mode]);
+    let mut s = if app.mode == MODE_TEMP {
+        format!(
+            "\x1b[1m{} {} \x1b[38;2;255;170;80m{:.0} K\x1b[0m \x1b[2m({:.0} °C, +/-)\x1b[0m ",
+            app.mode + 1,
+            MODE_NAMES[app.mode],
+            app.temp_k,
+            app.temp_k - 273.15
+        )
+    } else {
+        format!("\x1b[1m{} {}\x1b[0m ", app.mode + 1, MODE_NAMES[app.mode])
+    };
     let items: &[(&str, (u8, u8, u8))] = match app.mode {
         0 => &CAT_LEGEND,
-        1 => &PHASE_LEGEND,
+        1 | MODE_TEMP => &PHASE_LEGEND,
         2 => &ORIGIN_LEGEND,
         3 => &OCC_LEGEND,
         4 => &BLOCK_LEGEND,
+        10 => &LIFE_LEGEND,
+        11 => &STABILITY_LEGEND,
         _ => &[],
     };
     if items.is_empty() {
@@ -588,7 +710,7 @@ fn draw_grid(app: &App, cols: u16) {
         s.push_str(&move_to(4, 2));
         s.push_str("\x1b[2mterminal too narrow for the table (need 75 cols) — / still works\x1b[0m");
     } else {
-        let mm = if (5..=7).contains(&app.mode) {
+        let mm = if (5..=7).contains(&app.mode) || app.mode == 9 {
             let vals: Vec<f64> = app
                 .els
                 .iter()
@@ -602,7 +724,7 @@ fn draw_grid(app: &App, cols: u16) {
         };
         for (i, e) in app.els.iter().enumerate() {
             let col = GRID_X0 + (e.xpos as u16 - 1) * CELL_W;
-            let (r, g, b) = cell_rgb(e, app.mode, mm);
+            let (r, g, b) = cell_rgb(e, app.mode, mm, app.temp_k);
             s.push_str(&move_to(grid_row(e.ypos), col));
             if i == app.sel {
                 s.push_str(&format!("\x1b[7;1;38;2;{r};{g};{b}m{:<3}\x1b[0m", e.symbol));
@@ -616,7 +738,7 @@ fn draw_grid(app: &App, cols: u16) {
 }
 
 fn help_line() -> String {
-    "\x1b[2m←→ Z± · ↑↓ col · 1-8/^←→ color · J/K scroll · / find · c claude · ? help · q quit\x1b[0m"
+    "\x1b[2m←→ Z± · ↑↓ col · 1-9/m color · J/K scroll · / find · c claude · ? help · q quit\x1b[0m"
         .to_string()
 }
 
@@ -637,6 +759,7 @@ fn set_detail(app: &App, detail: &mut Pane, cols: u16) {
     let text = match app.view {
         View::Help => help_text(),
         View::Chat => chat_text(app),
+        View::Modes => modes_text(app),
         View::Article => detail_text(&app.els[app.sel], side),
     };
     detail.set_text(&text);
@@ -728,15 +851,39 @@ fn draw_side(app: &App, cols: u16) {
     std::io::stdout().flush().ok();
 }
 
+/// The `m` menu: every color mode, with the digit that reaches it.
+fn modes_text(app: &App) -> String {
+    let head = "\x1b[1;38;2;247;140;60m";
+    let mut s = format!("{head}Color modes{RESET}\n\n");
+    for (i, name) in MODE_NAMES.iter().enumerate() {
+        let key = if i < DIGIT_MODES {
+            format!("{}", i + 1)
+        } else {
+            " ".to_string()
+        };
+        let marker = if i == app.mode { "●" } else { " " };
+        let line = format!("  {marker} {key:>2}  {name}");
+        if i == app.menu_ix {
+            s.push_str(&format!("\x1b[7m{}\x1b[0m\n", crust::pad_display(&line, 34)));
+        } else {
+            s.push_str(&format!("{line}\n"));
+        }
+    }
+    s.push_str("\n\x1b[2mj/k move · ENTER pick · 1-9 direct · Ctrl+←/→ cycle · ESC back\x1b[0m\n");
+    s
+}
+
 fn help_text() -> String {
     format!(
         "{RUST}elements — keys{RESET}\n\n\
          \x20 ← → / h l           previous / next element (walks the whole table)\n\
          \x20 ↑ ↓ / k j           up / down within the column\n\
          \x20 < >                 same as ← →\n\
-         \x20 1-8, Ctrl+← →       color mode: 1 category · 2 phase · 3 cosmic origin ·\n\
+         \x20 1-9, Ctrl+← →       color mode: 1 category · 2 phase · 3 cosmic origin ·\n\
          \x20                     4 occurrence · 5 block · 6 electronegativity ·\n\
-         \x20                     7 melting point · 8 density (log scale)\n\
+         \x20                     7 melting point · 8 density (log) · 9 phase at T\n\
+         \x20 m                   mode menu (all 12, including the ones past the digits)\n\
+         \x20 + -                 in mode 9: temperature ±25 K  (* and _ step 250 K)\n\
          \x20 J K / Shift-↓ ↑     scroll the article one line\n\
          \x20 Space, PgDn/PgUp    scroll the article one page\n\
          \x20 g G                 top / bottom of the article\n\
