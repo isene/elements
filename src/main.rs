@@ -28,14 +28,15 @@ const SIDE_ROWS: u16 = DETAIL_Y - 3; // rows 3..DETAIL_Y-1 are the side block's
 const RUST: &str = "\x1b[1;38;2;247;76;0m";
 const RESET: &str = "\x1b[0m";
 
-const MODE_NAMES: [&str; 12] = [
+const MODE_NAMES: [&str; 13] = [
     "category", "phase", "cosmic origin", "occurrence", "block",
     "electronegativity", "melting point", "density",
-    "phase at T", "1st ionization", "life", "stability",
+    "phase at T", "1st ionization", "life", "stability", "known by",
 ];
 /// Modes reachable by digit; the rest live in the `m` menu and the cycle.
 const DIGIT_MODES: usize = 9;
 const MODE_TEMP: usize = 8;
+const MODE_YEAR: usize = 12;
 
 #[derive(PartialEq, Clone, Copy)]
 enum View {
@@ -52,6 +53,8 @@ struct App {
     mode: usize,
     /// Temperature for the "phase at T" mode, in kelvin.
     temp_k: f64,
+    /// Year for the "known by" mode; negative is BC.
+    year: i32,
     view: View,
     /// Cursor in the mode menu.
     menu_ix: usize,
@@ -109,6 +112,7 @@ fn main() {
     // Caches written before discovery years existed: one cheap Wikidata
     // query fills them in, no article refetch. Runs once, then persists.
     let mut els = els;
+    let mut dirty = false;
     if els.iter().all(|e| e.discovered_year.is_empty()) {
         if let Ok(years) = fetch::fetch_years() {
             for e in els.iter_mut() {
@@ -116,8 +120,22 @@ fn main() {
                     e.discovered_year = y.clone();
                 }
             }
-            let _ = data::save(&els);
+            dirty = true;
         }
+    }
+    // Elements Wikidata has no date for, patched locally (no network).
+    let mut gaps = std::collections::HashMap::new();
+    fetch::fill_gaps(&mut gaps);
+    for e in els.iter_mut() {
+        if e.discovered_year.is_empty() {
+            if let Some(y) = gaps.get(&e.number) {
+                e.discovered_year = y.clone();
+                dirty = true;
+            }
+        }
+    }
+    if dirty {
+        let _ = data::save(&els);
     }
 
     // Default to the suite's namesake.
@@ -146,12 +164,15 @@ fn main() {
     }
 
     let max_y = els.iter().map(|e| e.ypos).max().unwrap_or(10);
+    // Start the year slider with the whole table known: the latest find.
+    let latest = els.iter().filter_map(element_year).max().unwrap_or(2010);
     let mut app = App {
         els,
         sel,
         max_y,
         mode: 0,
         temp_k: 293.15, // room temperature
+        year: latest,
         view: View::Article,
         menu_ix: 0,
         chat: Vec::new(),
@@ -218,10 +239,17 @@ fn main() {
             // Temperature for the "phase at T" mode. Coarse with the
             // shifted pair, and only meaningful while that mode is up.
             "+" | "-" | "*" | "_" => {
+                let up = key == "+" || key == "*";
+                let coarse = key == "*" || key == "_";
                 if app.mode == MODE_TEMP {
-                    let step = if key == "*" || key == "_" { 250.0 } else { 25.0 };
-                    let up = key == "+" || key == "*";
+                    let step = if coarse { 250.0 } else { 25.0 };
                     app.temp_k = (app.temp_k + if up { step } else { -step }).clamp(0.0, 7000.0);
+                    draw_header(&app, cols);
+                    draw_grid(&app, cols);
+                } else if app.mode == MODE_YEAR {
+                    let step = if coarse { 250 } else { 5 };
+                    let hi = app.els.iter().filter_map(element_year).max().unwrap_or(2010);
+                    app.year = (app.year + if up { step } else { -step }).clamp(-10000, hi);
                     draw_header(&app, cols);
                     draw_grid(&app, cols);
                 } else {
@@ -531,6 +559,45 @@ fn life_idx(z: u32) -> usize {
     }
 }
 
+/// Discovery year as a number: "1922" → 1922, "5000 BC" → -5000,
+/// "ancient" → far enough back to count as always known.
+fn element_year(e: &Element) -> Option<i32> {
+    let y = e.discovered_year.trim();
+    if y.is_empty() {
+        return None;
+    }
+    if y == "ancient" {
+        return Some(-10000);
+    }
+    match y.strip_suffix(" BC") {
+        Some(n) => n.trim().parse::<i32>().ok().map(|n| -n),
+        None => y.parse::<i32>().ok(),
+    }
+}
+
+fn fmt_year(y: i32) -> String {
+    if y < 0 { format!("{} BC", -y) } else { y.to_string() }
+}
+
+const YEAR_LEGEND: [(&str, (u8, u8, u8)); 4] = [
+    ("just found", (255, 110, 40)),
+    ("known", (235, 205, 150)),
+    ("not yet", (58, 58, 66)),
+    ("no date", (120, 100, 130)),
+];
+
+/// Index into YEAR_LEGEND for element `e` as of `year`.
+fn year_idx(e: &Element, year: i32) -> usize {
+    match element_year(e) {
+        None => 3,
+        Some(y) if y > year => 2,
+        // Flare for a decade after the find, so scrubbing shows the
+        // frontier moving rather than a static wall of "known".
+        Some(y) if year - y <= 10 => 0,
+        Some(_) => 1,
+    }
+}
+
 const STABILITY_LEGEND: [(&str, (u8, u8, u8)); 3] = [
     ("stable isotope", (102, 221, 136)),
     ("no stable isotope", (255, 119, 102)),
@@ -586,11 +653,12 @@ fn gradient(t: f64) -> (u8, u8, u8) {
     }
 }
 
-fn cell_rgb(e: &Element, mode: usize, mm: Option<(f64, f64)>, temp_k: f64) -> (u8, u8, u8) {
+fn cell_rgb(e: &Element, mode: usize, mm: Option<(f64, f64)>, temp_k: f64, year: i32) -> (u8, u8, u8) {
     match mode {
         MODE_TEMP => PHASE_LEGEND[phase_at(e, temp_k)].1,
         10 => LIFE_LEGEND[life_idx(e.number)].1,
         11 => STABILITY_LEGEND[stability_idx(e.number)].1,
+        MODE_YEAR => YEAR_LEGEND[year_idx(e, year)].1,
         1 => match e.phase.as_str() {
             "Solid" => PHASE_LEGEND[0].1,
             "Liquid" => PHASE_LEGEND[1].1,
@@ -634,6 +702,15 @@ fn legend_string(app: &App) -> String {
             app.temp_k,
             app.temp_k - 273.15
         )
+    } else if app.mode == MODE_YEAR {
+        let known = app.els.iter().filter(|e| year_idx(e, app.year) < 2).count();
+        format!(
+            "\x1b[1m{} {} \x1b[38;2;255;170;80m{}\x1b[0m \x1b[2m({} known, +/-)\x1b[0m ",
+            app.mode + 1,
+            MODE_NAMES[app.mode],
+            fmt_year(app.year),
+            known
+        )
     } else {
         format!("\x1b[1m{} {}\x1b[0m ", app.mode + 1, MODE_NAMES[app.mode])
     };
@@ -645,6 +722,7 @@ fn legend_string(app: &App) -> String {
         4 => &BLOCK_LEGEND,
         10 => &LIFE_LEGEND,
         11 => &STABILITY_LEGEND,
+        MODE_YEAR => &YEAR_LEGEND,
         _ => &[],
     };
     if items.is_empty() {
@@ -724,7 +802,7 @@ fn draw_grid(app: &App, cols: u16) {
         };
         for (i, e) in app.els.iter().enumerate() {
             let col = GRID_X0 + (e.xpos as u16 - 1) * CELL_W;
-            let (r, g, b) = cell_rgb(e, app.mode, mm, app.temp_k);
+            let (r, g, b) = cell_rgb(e, app.mode, mm, app.temp_k, app.year);
             s.push_str(&move_to(grid_row(e.ypos), col));
             if i == app.sel {
                 s.push_str(&format!("\x1b[7;1;38;2;{r};{g};{b}m{:<3}\x1b[0m", e.symbol));
@@ -882,8 +960,9 @@ fn help_text() -> String {
          \x20 1-9, Ctrl+← →       color mode: 1 category · 2 phase · 3 cosmic origin ·\n\
          \x20                     4 occurrence · 5 block · 6 electronegativity ·\n\
          \x20                     7 melting point · 8 density (log) · 9 phase at T\n\
-         \x20 m                   mode menu (all 12, including the ones past the digits)\n\
+         \x20 m                   mode menu (all 13, including the ones past the digits)\n\
          \x20 + -                 in mode 9: temperature ±25 K  (* and _ step 250 K)\n\
+         \x20                     in mode 13: year ±5  (* and _ step 250 years)\n\
          \x20 J K / Shift-↓ ↑     scroll the article one line\n\
          \x20 Space, PgDn/PgUp    scroll the article one page\n\
          \x20 g G                 top / bottom of the article\n\

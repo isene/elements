@@ -33,6 +33,17 @@ fn agent() -> ureq::Agent {
         .build()
 }
 
+/// Fill the handful of elements Wikidata has no P575 for. The ancient
+/// metals get "ancient"; zinc gets the year it was first isolated as a
+/// metal in Europe (Marggraf), the date periodic tables conventionally
+/// use, even though its alloys were worked long before.
+pub fn fill_gaps(out: &mut std::collections::HashMap<u32, String>) {
+    for z in [50, 51, 80, 82, 83] {
+        out.entry(z).or_insert_with(|| "ancient".to_string());
+    }
+    out.entry(30).or_insert_with(|| "1746".to_string());
+}
+
 /// Discovery years keyed by atomic number. Ancient metals that Wikidata
 /// leaves undated (Sn, Sb, Hg, Pb, Bi) fall back to "ancient".
 pub fn fetch_years() -> Result<std::collections::HashMap<u32, String>, String> {
@@ -79,9 +90,7 @@ pub fn fetch_years() -> Result<std::collections::HashMap<u32, String>, String> {
             })
             .or_insert(label);
     }
-    for z in [50, 51, 80, 82, 83] {
-        out.entry(z).or_insert_with(|| "ancient".to_string());
-    }
+    fill_gaps(&mut out);
     Ok(out)
 }
 

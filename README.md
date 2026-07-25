@@ -11,8 +11,9 @@ Interactive periodic table: all 118 confirmed elements plus the hypothesized 119
 ## Features
 
 - **Full table**: 118 confirmed elements, plus hypothesized 119–126 (period 8 and the predicted g-block row)
-- **Twelve color modes** (keys 1-9, `m` for the menu, or Ctrl+←/→ to cycle): category, phase at STP, cosmic origin (Big Bang, dying stars, supernovae, neutron-star mergers …), occurrence, block, electronegativity, melting point, density, phase at an adjustable temperature, first ionization energy, role in biology, and stable vs no-stable-isotope — legend in the header bar
+- **Thirteen color modes** (keys 1-9, `m` for the menu, or Ctrl+←/→ to cycle): category, phase at STP, cosmic origin (Big Bang, dying stars, supernovae, neutron-star mergers …), occurrence, block, electronegativity, melting point, density, phase at an adjustable temperature, first ionization energy, role in biology, stable vs no-stable-isotope, and known-by-year — legend in the header bar
 - **The temperature instrument**: in mode 9, `+`/`-` move the temperature (±25 K, or ±250 K with `*`/`_`) and the table melts and boils as you climb. Mercury goes liquid at 234 K, the alkali metals boil away before 1000 K
+- **The history instrument**: mode 13 is a year slider. Scrub back and the table empties out; at 1869 you get Mendeleev's 64 elements with the holes at Sc, Ga and Ge that he predicted, and helium flaring as a fresh find. At year 1000 only the nine metals of antiquity are lit
 - **Group and period labels** on the table; math markup and reference/link tail sections stripped from the articles
 - **Wide-terminal layout**: on terminals ≥151 columns the property table sits beside the periodic table, leaving the pane below for the article
 - **Structured data**: mass, density, melt/boil (K and °C), molar heat, group/period/block, shells, electron configuration, electronegativity, electron affinity, ionization energy, appearance, discoverer and year of discovery (Wikidata)
@@ -43,7 +44,7 @@ First start fetches the dataset from Wikipedia (about a minute), then everything
 | < > | Same as ← → |
 | 1-9, Ctrl+←/→ | Color mode (see the list above) |
 | m | Mode menu, including the modes past the digits |
-| + - (* _) | Temperature ±25 K (±250 K) while in the "phase at T" mode |
+| + - (* _) | Temperature ±25 K (±250 K) in mode 9; year ±5 (±250) in mode 13 |
 | J K, Shift+↓/↑ | Scroll the article one line |
 | Space, PgUp/PgDn | Scroll the article one page |
 | g G | Top / bottom of the article |
