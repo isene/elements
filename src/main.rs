@@ -1200,10 +1200,14 @@ const TAIL_SECTIONS: [&str; 9] = [
 
 /// Clean up a Wikipedia plain-text extract for display:
 /// - bold the "== Section ==" headings,
-/// - stop at the reference/link tail sections,
-/// - collapse <math> dumps (a stack of indented glyph lines followed by a
-///   "{\displaystyle …}" annotation) into the readable LaTeX body.
+/// - stop at the reference/link tail sections.
+///
+/// The math blocks and the debris from dropped templates are folded by
+/// crust before the walk starts.
 fn style_article(a: &str) -> String {
+    // crust folds the extract's math blocks into single inline
+    // expressions and clears the debris left by dropped templates.
+    let a = crust::text::clean_wiki_extract(a);
     let mut out: Vec<String> = Vec::new();
     for line in a.lines() {
         let t = line.trim();
@@ -1219,23 +1223,6 @@ fn style_article(a: &str) -> String {
                 3 => format!("  {}", style::rgb(title, Some((250, 200, 130)), None, "b")),
                 _ => format!("    {}", style::rgb(title, Some((200, 170, 140)), None, "b")),
             });
-        } else if let Some(p) = line
-            .find("{\\displaystyle")
-            .or_else(|| line.find("{\\textstyle"))
-        {
-            // Drop the glyph stack that precedes the annotation.
-            while matches!(out.last(), Some(l) if l.is_empty() || l.starts_with(' ')) {
-                out.pop();
-            }
-            let rest = &line[p..];
-            let inner = rest
-                .find(' ')
-                .map(|i| rest[i + 1..].trim_end())
-                .unwrap_or("");
-            let inner = inner.strip_suffix('}').unwrap_or(inner).trim();
-            if !inner.is_empty() {
-                out.push(format!("    {}", style::rgb(inner, Some((150, 200, 255)), None, "")));
-            }
         } else {
             // One blank line between paragraphs: the extract runs them
             // together, which reads as a wall of text in a wide pane.

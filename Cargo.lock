@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "elements"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "fe2o3-crust",
  "serde",
@@ -103,7 +103,7 @@ dependencies = [
 
 [[package]]
 name = "fe2o3-crust"
-version = "0.1.34"
+version = "0.1.45"
 dependencies = [
  "crossterm",
  "libc",
