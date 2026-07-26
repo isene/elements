@@ -13,7 +13,8 @@
 mod data;
 mod fetch;
 
-use crust::{Crust, Input, Pane};
+use crust::style;
+use crust::{Crust, Cursor, Input, Pane};
 use data::Element;
 use std::io::Write;
 
@@ -25,8 +26,11 @@ const SIDE_X: u16 = 78; // property block beside the grid starts here
 const SIDE_MIN: u16 = SIDE_X + 73; // terminal width needed for the side block
 const SIDE_ROWS: u16 = DETAIL_Y - 3; // rows 3..DETAIL_Y-1 are the side block's
 
-const RUST: &str = "\x1b[1;38;2;247;76;0m";
-const RESET: &str = "\x1b[0m";
+const RUST_RGB: (u8, u8, u8) = (247, 76, 0);
+const HEAD_RGB: (u8, u8, u8) = (247, 140, 60);
+const ERR_RGB: (u8, u8, u8) = (255, 120, 120);
+const ASK_RGB: (u8, u8, u8) = (120, 200, 255);
+const RESET: &str = style::RESET;
 
 const MODE_NAMES: [&str; 13] = [
     "category", "phase", "cosmic origin", "occurrence", "block",
@@ -294,14 +298,14 @@ fn main() {
             "G" | "END" => detail.bottom(),
             "/" => {
                 let q = status.ask_or_cancel("Find (name, symbol, or number): ", "");
-                print!("\x1b[?25l");
+                print!("{}", Cursor::hide_seq());
                 std::io::stdout().flush().ok();
                 match q.as_deref().map(|q| find(&app.els, q)) {
                     Some(Some(i)) => {
                         select(&mut app, i, &mut detail, cols);
                         status.say(&help_line());
                     }
-                    Some(None) => status.say("\x1b[38;2;255;120;120mno match\x1b[0m"),
+                    Some(None) => status.say(&style::rgb("no match", Some(ERR_RGB), None, "")),
                     None => status.say(&help_line()),
                 }
             }
@@ -322,7 +326,7 @@ fn main() {
                 let msg = match result {
                     Ok(e) => {
                         if let Err(err) = data::save(&e) {
-                            format!("\x1b[38;2;255;120;120mcould not save cache: {err}\x1b[0m")
+                            style::rgb(&format!("could not save cache: {err}"), Some(ERR_RGB), None, "")
                         } else {
                             let cur = app.els[app.sel].number;
                             app.els = e;
@@ -331,7 +335,7 @@ fn main() {
                             "data updated from Wikipedia".to_string()
                         }
                     }
-                    Err(err) => format!("\x1b[38;2;255;120;120mfetch failed: {err}\x1b[0m"),
+                    Err(err) => style::rgb(&format!("fetch failed: {err}"), Some(ERR_RGB), None, ""),
                 };
                 Crust::init();
                 Crust::set_app_identity("Elements");
@@ -349,11 +353,11 @@ fn main() {
                     "Follow-up: ".to_string()
                 };
                 let q = status.ask_or_cancel(&prompt, "");
-                print!("\x1b[?25l");
+                print!("{}", Cursor::hide_seq());
                 std::io::stdout().flush().ok();
                 match q {
                     Some(q) if !q.trim().is_empty() => {
-                        status.say("\x1b[38;2;120;200;255m asking claude…\x1b[0m");
+                        status.say(&style::rgb(" asking claude…", Some(ASK_RGB), None, ""));
                         let answer = ask_claude(&app, q.trim());
                         match answer {
                             Ok(a) if !a.is_empty() => {
@@ -362,8 +366,8 @@ fn main() {
                                 set_detail(&app, &mut detail, cols);
                                 status.say(&help_line());
                             }
-                            Ok(_) => status.say("\x1b[38;2;255;120;120mclaude returned nothing\x1b[0m"),
-                            Err(e) => status.say(&format!("\x1b[38;2;255;120;120mclaude: {e}\x1b[0m")),
+                            Ok(_) => status.say(&style::rgb("claude returned nothing", Some(ERR_RGB), None, "")),
+                            Err(e) => status.say(&style::rgb(&format!("claude: {e}"), Some(ERR_RGB), None, "")),
                         }
                     }
                     _ => status.say(&help_line()),
@@ -683,7 +687,7 @@ fn cell_rgb(e: &Element, mode: usize, mm: Option<(f64, f64)>, temp_k: f64, year:
 // ─────────────────────────── rendering ───────────────────────────────
 
 fn move_to(row: u16, col: u16) -> String {
-    format!("\x1b[{};{}H", row, col)
+    Cursor::at(col, row)
 }
 
 fn grid_row(ypos: u32) -> u16 {
@@ -696,23 +700,21 @@ fn grid_row(ypos: u32) -> u16 {
 fn legend_string(app: &App) -> String {
     let mut s = if app.mode == MODE_TEMP {
         format!(
-            "\x1b[1m{} {} \x1b[38;2;255;170;80m{:.0} K\x1b[0m \x1b[2m({:.0} °C, +/-)\x1b[0m ",
-            app.mode + 1,
-            MODE_NAMES[app.mode],
-            app.temp_k,
-            app.temp_k - 273.15
+            "{} {} {} ",
+            style::bold(&format!("{} {}", app.mode + 1, MODE_NAMES[app.mode])),
+            style::rgb(&format!("{:.0} K", app.temp_k), Some((255, 170, 80)), None, ""),
+            style::dim(&format!("({:.0} °C, +/-)", app.temp_k - 273.15))
         )
     } else if app.mode == MODE_YEAR {
         let known = app.els.iter().filter(|e| year_idx(e, app.year) < 2).count();
         format!(
-            "\x1b[1m{} {} \x1b[38;2;255;170;80m{}\x1b[0m \x1b[2m({} known, +/-)\x1b[0m ",
-            app.mode + 1,
-            MODE_NAMES[app.mode],
-            fmt_year(app.year),
-            known
+            "{} {} {} ",
+            style::bold(&format!("{} {}", app.mode + 1, MODE_NAMES[app.mode])),
+            style::rgb(&fmt_year(app.year), Some((255, 170, 80)), None, ""),
+            style::dim(&format!("({known} known, +/-)"))
         )
     } else {
-        format!("\x1b[1m{} {}\x1b[0m ", app.mode + 1, MODE_NAMES[app.mode])
+        format!("{} ", style::bold(&format!("{} {}", app.mode + 1, MODE_NAMES[app.mode])))
     };
     let items: &[(&str, (u8, u8, u8))] = match app.mode {
         0 => &CAT_LEGEND,
@@ -727,15 +729,16 @@ fn legend_string(app: &App) -> String {
     };
     if items.is_empty() {
         // Gradient modes: a color ramp.
-        s.push_str("\x1b[2mlow \x1b[0m");
+        s.push_str(&style::dim("low "));
         for i in 0..16 {
             let (r, g, b) = gradient(i as f64 / 15.0);
-            s.push_str(&format!("\x1b[38;2;{r};{g};{b}m█\x1b[0m"));
+            s.push_str(&style::rgb("█", Some((r, g, b)), None, ""));
         }
-        s.push_str("\x1b[2m high\x1b[0m");
+        s.push_str(&style::dim(" high"));
     } else {
         for (lbl, (r, g, b)) in items {
-            s.push_str(&format!("\x1b[38;2;{r};{g};{b}m{lbl}\x1b[0m "));
+            s.push_str(&style::rgb(lbl, Some((*r, *g, *b)), None, ""));
+            s.push(' ');
         }
     }
     s
@@ -744,10 +747,14 @@ fn legend_string(app: &App) -> String {
 fn draw_header(app: &App, cols: u16) {
     let e = &app.els[app.sel];
     let (r, g, b) = cat_rgb(&e.category);
-    let bg = "\x1b[48;5;236m";
+    let bar_bg: (u8, u8, u8) = (38, 38, 38);
     let info = format!(
-        " {RUST}elements{RESET}  \x1b[1m{}{RESET} ({})  \x1b[2mZ={}\x1b[0m  \x1b[38;2;{r};{g};{b}m{}{RESET}",
-        e.name, e.symbol, e.number, e.category
+        " {}  {} ({})  {}  {}",
+        style::rgb("elements", Some(RUST_RGB), None, "b"),
+        style::bold(&e.name),
+        e.symbol,
+        style::dim(&format!("Z={}", e.number)),
+        style::rgb(&e.category, Some((r, g, b)), None, "")
     );
     let iw = crust::display_width(&info);
     // Align the legend with the property table beside the grid when the
@@ -758,9 +765,15 @@ fn draw_header(app: &App, cols: u16) {
         format!("{info}   {}", legend_string(app))
     };
     // Re-arm the bar background after every SGR reset in the content.
-    let line = content.replace(RESET, &format!("{RESET}{bg}"));
     let pad = (cols as usize).saturating_sub(crust::display_width(&content));
-    print!("{}{bg}{line}{}{RESET}", move_to(1, 1), " ".repeat(pad));
+    let armed = style::rgb("", None, Some(bar_bg), "");
+    let armed = armed.trim_end_matches(RESET);
+    let line = content.replace(RESET, &format!("{RESET}{armed}"));
+    print!(
+        "{}{}",
+        move_to(1, 1),
+        style::rgb(&format!("{line}{}", " ".repeat(pad)), None, Some(bar_bg), "")
+    );
     std::io::stdout().flush().ok();
 }
 
@@ -772,11 +785,11 @@ fn draw_grid_labels(cols: u16) {
     let mut s = String::new();
     for g in 1..=18u16 {
         s.push_str(&move_to(3, GRID_X0 + (g - 1) * CELL_W));
-        s.push_str(&format!("\x1b[2m{:^3}\x1b[0m", g));
+        s.push_str(&style::dim(&format!("{g:^3}")));
     }
     for p in 1..=8u16 {
         s.push_str(&move_to(grid_row(p as u32), 1));
-        s.push_str(&format!("\x1b[2m{p}\x1b[0m"));
+        s.push_str(&style::dim(&p.to_string()));
     }
     print!("{s}");
     std::io::stdout().flush().ok();
@@ -786,7 +799,7 @@ fn draw_grid(app: &App, cols: u16) {
     let mut s = String::new();
     if cols < MIN_COLS {
         s.push_str(&move_to(4, 2));
-        s.push_str("\x1b[2mterminal too narrow for the table (need 75 cols) — / still works\x1b[0m");
+        s.push_str(&style::dim("terminal too narrow for the table (need 75 cols) — / still works"));
     } else {
         let mm = if (5..=7).contains(&app.mode) || app.mode == 9 {
             let vals: Vec<f64> = app
@@ -805,9 +818,9 @@ fn draw_grid(app: &App, cols: u16) {
             let (r, g, b) = cell_rgb(e, app.mode, mm, app.temp_k, app.year);
             s.push_str(&move_to(grid_row(e.ypos), col));
             if i == app.sel {
-                s.push_str(&format!("\x1b[7;1;38;2;{r};{g};{b}m{:<3}\x1b[0m", e.symbol));
+                s.push_str(&style::rgb(&format!("{:<3}", e.symbol), Some((r, g, b)), None, "br"));
             } else {
-                s.push_str(&format!("\x1b[38;2;{r};{g};{b}m{:<3}\x1b[0m", e.symbol));
+                s.push_str(&style::rgb(&format!("{:<3}", e.symbol), Some((r, g, b)), None, ""));
             }
         }
     }
@@ -816,8 +829,7 @@ fn draw_grid(app: &App, cols: u16) {
 }
 
 fn help_line() -> String {
-    "\x1b[2m←→ Z± · ↑↓ col · 1-9/m color · J/K scroll · / find · c claude · ? help · q quit\x1b[0m"
-        .to_string()
+    style::dim("←→ Z± · ↑↓ col · 1-9/m color · J/K scroll · / find · c claude · ? help · q quit")
 }
 
 fn draw_all(app: &App, detail: &mut Pane, status: &mut Pane, cols: u16, _rows: u16) {
@@ -860,7 +872,6 @@ fn draw_side(app: &App, cols: u16) {
             lines.push(l.to_string());
         }
     }
-    let dim = "\x1b[2m";
     // Long values (notably the full ionization series) continue on further
     // lines indented to the value column instead of being cut off.
     let w = avail.saturating_sub(14).max(8);
@@ -908,7 +919,7 @@ fn draw_side(app: &App, cols: u16) {
     for ((label, _), block) in items.iter().zip(blocks) {
         for (i, chunk) in block.into_iter().enumerate() {
             if i == 0 {
-                lines.push(format!("{dim}{label:<14}{RESET}{chunk}"));
+                lines.push(format!("{}{chunk}", style::dim(&format!("{label:<14}"))));
             } else {
                 lines.push(format!("{:14}{chunk}", ""));
             }
@@ -931,8 +942,7 @@ fn draw_side(app: &App, cols: u16) {
 
 /// The `m` menu: every color mode, with the digit that reaches it.
 fn modes_text(app: &App) -> String {
-    let head = "\x1b[1;38;2;247;140;60m";
-    let mut s = format!("{head}Color modes{RESET}\n\n");
+    let mut s = format!("{}\n\n", style::rgb("Color modes", Some(HEAD_RGB), None, "b"));
     for (i, name) in MODE_NAMES.iter().enumerate() {
         let key = if i < DIGIT_MODES {
             format!("{}", i + 1)
@@ -942,18 +952,18 @@ fn modes_text(app: &App) -> String {
         let marker = if i == app.mode { "●" } else { " " };
         let line = format!("  {marker} {key:>2}  {name}");
         if i == app.menu_ix {
-            s.push_str(&format!("\x1b[7m{}\x1b[0m\n", crust::pad_display(&line, 34)));
+            s.push_str(&format!("{}\n", style::reverse(&crust::pad_display(&line, 34))));
         } else {
             s.push_str(&format!("{line}\n"));
         }
     }
-    s.push_str("\n\x1b[2mj/k move · ENTER pick · 1-9 direct · Ctrl+←/→ cycle · ESC back\x1b[0m\n");
+    s.push_str(&format!("\n{}\n", style::dim("j/k move · ENTER pick · 1-9 direct · Ctrl+←/→ cycle · ESC back")));
     s
 }
 
 fn help_text() -> String {
     format!(
-        "{RUST}elements — keys{RESET}\n\n\
+        "{}\n\n\
          \x20 ← → / h l           previous / next element (walks the whole table)\n\
          \x20 ↑ ↓ / k j           up / down within the column\n\
          \x20 < >                 same as ← →\n\
@@ -981,7 +991,8 @@ fn help_text() -> String {
          Structured properties come from the Wikipedia-derived Periodic-Table-JSON\n\
          dataset; each element also carries its full Wikipedia article. Everything\n\
          is cached at ~/.elements/elements.json — the UI never touches the network.\n\
-         The hypothesized elements 119–126 are included (g-block row at the bottom)."
+         The hypothesized elements 119–126 are included (g-block row at the bottom).",
+        style::rgb("elements — keys", Some(RUST_RGB), None, "b")
     )
 }
 
@@ -1061,23 +1072,23 @@ fn prop_rows(e: &Element) -> (Vec<(String, String)>, Vec<(String, String)>) {
 
 fn detail_text(e: &Element, side: bool) -> String {
     let (r, g, b) = cat_rgb(&e.category);
-    let dim = "\x1b[2m";
-    let head = "\x1b[1;38;2;247;140;60m";
     let mut s = String::new();
 
     // On wide terminals the property block sits beside the grid, so the
     // pane carries only the prose. Stacked layouts get everything here.
     if !side {
         s.push_str(&format!(
-            "\x1b[1;38;2;{r};{g};{b}m{} ({}){RESET}  Z={}  \x1b[38;2;{r};{g};{b}m{}{RESET}\n\n",
-            e.name, e.symbol, e.number, e.category
+            "{}  Z={}  {}\n\n",
+            style::rgb(&format!("{} ({})", e.name, e.symbol), Some((r, g, b)), None, "b"),
+            e.number,
+            style::rgb(&e.category, Some((r, g, b)), None, "")
         ));
         let (phys, atom) = prop_rows(e);
         if !phys.is_empty() || !atom.is_empty() {
             s.push_str(&prop_table("Physical", &phys, "Atomic", &atom));
         }
         let mut wide = |label: &str, value: &str| {
-            s.push_str(&format!("{dim}{:<14}{RESET}{}\n", label, value));
+            s.push_str(&format!("{}{}\n", style::dim(&format!("{label:<14}")), value));
         };
         if let Some(a) = &e.appearance {
             wide("appearance", a);
@@ -1099,10 +1110,10 @@ fn detail_text(e: &Element, side: bool) -> String {
     }
 
     if !e.summary.is_empty() {
-        s.push_str(&format!("{head}Summary{RESET}\n{}\n\n", e.summary));
+        s.push_str(&format!("{}\n{}\n\n", style::rgb("Summary", Some(HEAD_RGB), None, "b"), e.summary));
     }
     if !e.article.is_empty() {
-        s.push_str(&format!("{head}Wikipedia article{RESET}\n"));
+        s.push_str(&format!("{}\n", style::rgb("Wikipedia article", Some(HEAD_RGB), None, "b")));
         s.push_str(&style_article(&e.article));
     }
     s
@@ -1113,28 +1124,36 @@ fn prop_table(lt: &str, left: &[(String, String)], rt: &str, right: &[(String, S
     const CELL: usize = 35; // inner width of each cell
     const LBL: usize = 12;
     const VAL: usize = CELL - LBL - 2;
-    let d = "\x1b[2m";
     let dash = |n: usize| "─".repeat(n);
+    let top = |title: &str, opener: &str, closer: &str, pad: usize| {
+        format!(
+            "{}{}{}",
+            style::dim(&format!("{opener}─ ")),
+            style::bold(title),
+            style::dim(&format!(" {}{closer}", dash(pad)))
+        )
+    };
     let mut s = String::new();
     s.push_str(&format!(
-        "{d}┌─{RESET} \x1b[1m{lt}{RESET} {d}{}┬─{RESET} \x1b[1m{rt}{RESET} {d}{}┐{RESET}\n",
-        dash(CELL - 3 - lt.chars().count()),
-        dash(CELL - 3 - rt.chars().count())
+        "{}{}\n",
+        top(lt, "┌", "┬", CELL - 3 - lt.chars().count()),
+        top(rt, "", "┐", CELL - 3 - rt.chars().count())
     ));
     for i in 0..left.len().max(right.len()) {
         let cell = |c: Option<&(String, String)>| -> String {
             match c {
-                Some((l, v)) => format!(" {d}{l:<LBL$}{RESET}{} ", fit(v, VAL)),
+                Some((l, v)) => format!(" {}{} ", style::dim(&format!("{l:<LBL$}")), fit(v, VAL)),
                 None => " ".repeat(CELL),
             }
         };
+        let bar = style::dim("│");
         s.push_str(&format!(
-            "{d}│{RESET}{}{d}│{RESET}{}{d}│{RESET}\n",
+            "{bar}{}{bar}{}{bar}\n",
             cell(left.get(i)),
             cell(right.get(i))
         ));
     }
-    s.push_str(&format!("{d}└{}┴{}┘{RESET}\n", dash(CELL), dash(CELL)));
+    s.push_str(&format!("{}\n", style::dim(&format!("└{}┴{}┘", dash(CELL), dash(CELL)))));
     s
 }
 
@@ -1196,9 +1215,9 @@ fn style_article(a: &str) -> String {
             }
             // Deeper sections: indented and progressively more muted.
             out.push(match level {
-                2 => format!("\x1b[1;38;2;247;140;60m{title}{RESET}"),
-                3 => format!("  \x1b[1;38;2;250;200;130m{title}{RESET}"),
-                _ => format!("    \x1b[1;38;2;200;170;140m{title}{RESET}"),
+                2 => style::rgb(title, Some(HEAD_RGB), None, "b"),
+                3 => format!("  {}", style::rgb(title, Some((250, 200, 130)), None, "b")),
+                _ => format!("    {}", style::rgb(title, Some((200, 170, 140)), None, "b")),
             });
         } else if let Some(p) = line
             .find("{\\displaystyle")
@@ -1215,7 +1234,7 @@ fn style_article(a: &str) -> String {
                 .unwrap_or("");
             let inner = inner.strip_suffix('}').unwrap_or(inner).trim();
             if !inner.is_empty() {
-                out.push(format!("    \x1b[38;2;150;200;255m{inner}\x1b[0m"));
+                out.push(format!("    {}", style::rgb(inner, Some((150, 200, 255)), None, "")));
             }
         } else {
             // One blank line between paragraphs: the extract runs them
@@ -1317,17 +1336,19 @@ fn ask_claude(app: &App, question: &str) -> Result<String, String> {
 
 fn chat_text(app: &App) -> String {
     let e = &app.els[app.sel];
-    let head = "\x1b[1;38;2;247;140;60m";
-    let mut s = format!("{head}Claude — {} ({}){RESET}\n\n", e.name, e.symbol);
+    let mut s = format!(
+        "{}\n\n",
+        style::rgb(&format!("Claude — {} ({})", e.name, e.symbol), Some(HEAD_RGB), None, "b")
+    );
     if app.chat.is_empty() {
-        s.push_str("\x1b[2mPress c to ask a question about this element.\x1b[0m\n");
+        s.push_str(&format!("{}\n", style::dim("Press c to ask a question about this element.")));
         return s;
     }
     for (q, a) in &app.chat {
-        s.push_str(&format!("\x1b[1;38;2;120;200;255m? {q}{RESET}\n\n"));
+        s.push_str(&format!("{}\n\n", style::rgb(&format!("? {q}"), Some(ASK_RGB), None, "b")));
         s.push_str(a);
         s.push_str("\n\n");
     }
-    s.push_str("\x1b[2mc: ask a follow-up · ESC: back to the article\x1b[0m\n");
+    s.push_str(&format!("{}\n", style::dim("c: ask a follow-up · ESC: back to the article")));
     s
 }
