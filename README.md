@@ -17,6 +17,7 @@ Interactive periodic table: all 118 confirmed elements plus the hypothesized 119
 - **Group and period labels** on the table; math markup and reference/link tail sections stripped from the articles
 - **Wide-terminal layout**: on terminals ≥151 columns the property table sits beside the periodic table, leaving the pane below for the article
 - **Structured data**: mass, density, melt/boil (K and °C), molar heat, group/period/block, shells, electron configuration, electronegativity, electron affinity, ionization energy, appearance, discoverer and year of discovery (Wikidata)
+- **Its isotopes** (`i`): hands the element to [isotopes](https://github.com/isene/isotopes), the chart of the nuclides, opened on its most abundant one. Iron lands on Fe-56, at the peak of the binding-energy curve; `q` there comes straight back here
 - **Ask Claude** (`c`): a conversation about the element you're looking at, with its data and article as context; follow-ups keep the thread
 - **The complete Wikipedia article** for every element, scrollable in the detail pane
 - **Offline**: one-time fetch, cached at `~/.elements/elements.json` (~4 MB); the UI never touches the network
