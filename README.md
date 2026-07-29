@@ -50,6 +50,7 @@ First start fetches the dataset from Wikipedia (about a minute), then everything
 | Space, PgUp/PgDn | Scroll the article one page |
 | g G | Top / bottom of the article |
 | / | Find an element (name, symbol, or atomic number) |
+| i | This element's isotopes, in the chart of the nuclides |
 | c | Ask Claude about this element (follow-ups keep context) |
 | C | Toggle the Claude conversation view |
 | w | Open the element's Wikipedia page in the browser |
