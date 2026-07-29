@@ -309,6 +309,29 @@ fn main() {
                     None => status.say(&help_line()),
                 }
             }
+            // The next level down: this element's isotopes, in the app
+            // that draws the chart of the nuclides. A separate binary
+            // rather than a second copy of the IAEA table in here.
+            "i" => {
+                let sym = app.els[app.sel].symbol.clone();
+                Crust::cleanup();
+                let ran = std::process::Command::new("isotopes").arg(&sym).status();
+                Crust::init();
+                Crust::set_app_identity("Elements");
+                Crust::clear_screen();
+                detail.full_refresh();
+                status.full_refresh();
+                draw_all(&app, &mut detail, &mut status, cols, rows);
+                if ran.is_err() {
+                    status.say(&style::rgb(
+                        " isotopes is not installed — get it with the fe2o3 launcher, or: \
+                         cargo install --git https://github.com/isene/isotopes",
+                        Some(ERR_RGB),
+                        None,
+                        "",
+                    ));
+                }
+            }
             "w" => {
                 let url = &app.els[app.sel].source;
                 if !url.is_empty() {
@@ -829,7 +852,7 @@ fn draw_grid(app: &App, cols: u16) {
 }
 
 fn help_line() -> String {
-    style::dim("←→ Z± · ↑↓ col · 1-9/m color · J/K scroll · / find · c claude · ? help · q quit")
+    style::dim("←→ Z± · ↑↓ col · 1-9/m color · i isotopes · J/K scroll · / find · c claude · ? help · q quit")
 }
 
 fn draw_all(app: &App, detail: &mut Pane, status: &mut Pane, cols: u16, _rows: u16) {
@@ -979,6 +1002,7 @@ fn help_text() -> String {
          \x20 /                   find an element (name, symbol, or atomic number)\n\
          \x20 c                   ask Claude about this element (follow-ups keep context)\n\
          \x20 C                   toggle the Claude conversation view\n\
+         \x20 i                   this element's isotopes, in the chart of the nuclides\n\
          \x20 w                   open the element's Wikipedia page in the browser\n\
          \x20 u                   re-fetch all data from Wikipedia\n\
          \x20 ?                   toggle this help\n\
