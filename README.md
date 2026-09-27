@@ -52,6 +52,7 @@ First start fetches the dataset from Wikipedia (about a minute), then everything
 | / | Find an element (name, symbol, or atomic number) |
 | i | This element's isotopes, in the chart of the nuclides |
 | c | Ask Claude about this element (follow-ups keep context) |
+| Ctrl-A | A full Claude session about what is on screen, as in every Fe₂O₃ app |
 | C | Toggle the Claude conversation view |
 | w | Open the element's Wikipedia page in the browser |
 | u | Re-fetch all data from Wikipedia |

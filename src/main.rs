@@ -369,6 +369,18 @@ fn main() {
                 app.view = if app.view == View::Help { View::Article } else { View::Help };
                 set_detail(&app, &mut detail, cols);
             }
+            // Ctrl+A, as in every Fe2O3 app: a full Claude session about
+            // what is on screen, with the talk so far.
+            "C-A" => {
+                let started = crust::claude_session("Elements", "I am in elements, my periodic-table app.", &claude_context(&app));
+                Crust::clear_screen();
+                detail.full_refresh();
+                status.full_refresh();
+                draw_all(&app, &mut detail, &mut status, cols, rows);
+                if !started {
+                    status.say(&style::rgb(" claude is not on the PATH", Some(ERR_RGB), None, ""));
+                }
+            }
             "c" => {
                 let prompt = if app.chat.is_empty() {
                     format!("Ask Claude about {}: ", app.els[app.sel].name)
@@ -1001,6 +1013,7 @@ fn help_text() -> String {
          \x20 g G                 top / bottom of the article\n\
          \x20 /                   find an element (name, symbol, or atomic number)\n\
          \x20 c                   ask Claude about this element (follow-ups keep context)\n\
+         \x20 Ctrl-A              a full Claude session about what is on screen\n\
          \x20 C                   toggle the Claude conversation view\n\
          \x20 i                   this element's isotopes, in the chart of the nuclides\n\
          \x20 w                   open the element's Wikipedia page in the browser\n\
@@ -1304,9 +1317,9 @@ fn claude_run(prompt: &str, input: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-/// Ask Claude about the selected element, carrying the earlier turns of
-/// this element's conversation so follow-ups work.
-fn ask_claude(app: &App, question: &str) -> Result<String, String> {
+/// What the screen shows, for Claude, with the talk so far: the `c`
+/// questions and the Ctrl+A session both start from it.
+fn claude_context(app: &App) -> String {
     let e = &app.els[app.sel];
     let mut ctx = String::new();
     ctx.push_str(&format!(
@@ -1333,6 +1346,14 @@ fn ask_claude(app: &App, question: &str) -> Result<String, String> {
             ctx.push_str(&format!("User: {q}\nYou: {a}\n\n"));
         }
     }
+    ctx
+}
+
+/// Ask Claude about the selected element, carrying the earlier turns of
+/// this element's conversation so follow-ups work.
+fn ask_claude(app: &App, question: &str) -> Result<String, String> {
+    let e = &app.els[app.sel];
+    let mut ctx = claude_context(app);
     ctx.push_str(&format!("\n\nUser's question: {question}\n"));
 
     let prompt = format!(
