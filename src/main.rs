@@ -381,7 +381,7 @@ fn main() {
                     status.say(&style::rgb(" claude is not on the PATH", Some(ERR_RGB), None, ""));
                 }
             }
-            "c" => {
+            "c" if crust::CLAUDE => {
                 let prompt = if app.chat.is_empty() {
                     format!("Ask Claude about {}: ", app.els[app.sel].name)
                 } else {
@@ -408,7 +408,7 @@ fn main() {
                     _ => status.say(&help_line()),
                 }
             }
-            "C" => {
+            "C" if crust::CLAUDE => {
                 app.view = if app.view == View::Chat { View::Article } else { View::Chat };
                 set_detail(&app, &mut detail, cols);
             }
@@ -864,7 +864,7 @@ fn draw_grid(app: &App, cols: u16) {
 }
 
 fn help_line() -> String {
-    style::dim("←→ Z± · ↑↓ col · 1-9/m color · i isotopes · J/K scroll · / find · c claude · ? help · q quit")
+    style::dim(&crust::key_help("←→ Z± · ↑↓ col · 1-9/m color · i isotopes · J/K scroll · / find · c claude · ? help · q quit"))
 }
 
 fn draw_all(app: &App, detail: &mut Pane, status: &mut Pane, cols: u16, _rows: u16) {
@@ -882,7 +882,7 @@ fn draw_all(app: &App, detail: &mut Pane, status: &mut Pane, cols: u16, _rows: u
 fn set_detail(app: &App, detail: &mut Pane, cols: u16) {
     let side = cols >= SIDE_MIN;
     let text = match app.view {
-        View::Help => help_text(),
+        View::Help => crust::key_help(help_text()).into_owned(),
         View::Chat => chat_text(app),
         View::Modes => modes_text(app),
         View::Article => detail_text(&app.els[app.sel], side),
@@ -1022,7 +1022,7 @@ fn help_text() -> String {
          \x20 ESC                 back to the article (quits from the article view)\n\
          \x20 q                   quit\n\n\
          The Claude view runs `claude -p` with this element's data and article as\n\
-         context; the conversation resets when you move to another element.\n\n\
+         context; Claude starts afresh when you move to another element.\n\n\
          The cosmic-origin mode shows the DOMINANT nucleosynthetic source per\n\
          element (simplified — most elements are a mix of sources).\n\n\
          Structured properties come from the Wikipedia-derived Periodic-Table-JSON\n\
