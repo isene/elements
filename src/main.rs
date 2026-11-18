@@ -864,7 +864,8 @@ fn draw_grid(app: &App, cols: u16) {
 }
 
 fn help_line() -> String {
-    style::dim(&crust::key_help("←→ Z± · ↑↓ col · 1-9/m color · i isotopes · J/K scroll · / find · c claude · ? help · q quit"))
+    let keys = style::dim(&crust::key_help("←→ Z± · ↑↓ col · 1-9/m color · i isotopes · J/K scroll · / find · c claude · ? help · q quit"));
+    crust::with_version(&keys, Crust::terminal_size().0 as usize, "elements", env!("CARGO_PKG_VERSION"))
 }
 
 fn draw_all(app: &App, detail: &mut Pane, status: &mut Pane, cols: u16, _rows: u16) {
